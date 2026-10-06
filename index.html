@@ -187,8 +187,10 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B33</td><td><span class="sev low">Low</span></td><td><a href="#b33">No per-object time scale, no UI gradients</a></td><td>Hit-stop and vignettes faked</td></tr>
         <tr><td class="mono">B34</td><td><span class="sev low">Low</span></td><td><a href="#b34">New scripts can't be attached for about a minute</a></td><td>"Script file does not exist"</td></tr>
         <tr><td class="mono">B35</td><td><span class="sev med">Medium</span></td><td><a href="#b35">A coding harness can't run automated playtests</a></td><td>~1 in 3 calls "fetch failed"; fly-cam client</td></tr>
-        <tr><td class="mono">B36</td><td><span class="sev high">High</span></td><td><a href="#b36">Left-handed parallelepipeds silently build nothing</a></td><td class="num">327 missing facets, 0 errors</td></tr>
+        <tr><td class="mono">B36</td><td><span class="sev high">High</span></td><td><a href="#b36">Left-handed parallelepipeds silently build nothing</a></td><td>327 facets, every home wall; SDK <code>Explosion.lua</code></td></tr>
         <tr><td class="mono">B37</td><td><span class="sev med">Medium</span></td><td><a href="#b37">Voxel ops never report an empty result</a></td><td>Any degenerate shape</td></tr>
+        <tr><td class="mono">B38</td><td><span class="sev low">Low</span></td><td><a href="#b38">SDK editor scripts cost ~3 ms per server frame when idle</a></td><td class="num">3.0 ms vs &lt;0.6 ms for the game</td></tr>
+        <tr><td class="mono">B39</td><td><span class="sev low">Low</span></td><td><a href="#b39">Server memory climbs on an idle, empty server</a></td><td class="num">12.6 → 15.9 GB in 75 min</td></tr>
       </tbody>
     </table>
   </div>
@@ -796,14 +798,14 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div class="rec-head"><span class="rec-id">B36</span><h3>Left-handed parallelepipeds silently build nothing</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone building oriented boxes with <code>Shape.Parallelepiped(center, a, b, c)</code>: cliff facets, banners, lids, armour plates.</dd>
-      <dt>What</dt><dd>When the three axes are left-handed (<code>dot(a, cross(b, c)) &lt; 0</code>), the Vox op runs, returns no error, and adds, removes or paints no voxels. A parallelepiped is symmetric, so the same box with <code>c</code> negated (right-handed) builds normally. The World Dresser built every north and east edge facet with left-handed axis triples, (1,0,0)/(0,1,0)/(0,0,−1) and (0,0,1)/(0,1,0)/(1,0,0). All 327 of them are missing live: the north and east cliffs, the north and east runs of the NW and SE corners, and 4 plaza banners. Every right-handed facet on the south and west edges stands, and the rubble placed on top of the missing facets floats at y = 8–9. Two sarcophagus lids in the Undercroft and six arch and coping pieces on the Refuge islands are missing for the same reason.</dd>
+      <dt>What</dt><dd>When the three axes are left-handed (<code>dot(a, cross(b, c)) &lt; 0</code>), the Vox op runs, returns no error, and adds, removes or paints no voxels. A parallelepiped is symmetric, so the same box with <code>c</code> negated (right-handed) builds normally. The World Dresser built every north and east edge facet with left-handed axis triples, (1,0,0)/(0,1,0)/(0,0,−1) and (0,0,1)/(0,1,0)/(1,0,0). All 327 of them are missing live: the north and east cliffs, the north and east runs of the NW and SE corners, and 4 plaza banners. Every right-handed facet on the south and west edges stands, and the rubble placed on top of the missing facets floats at y = 8–9. Two sarcophagus lids in the Undercroft and six arch and coping pieces on the Refuge islands are missing for the same reason.<br><br><b>Update:</b> the damage was wider. Every Hearth edge piece (wall, doorway wall, window wall and door) was a left-handed parallelepiped, so player homes have never had walls or doors: they were roofs on foundations. Also missing: 18 of the 38 Spire-lair pieces, the Colossus's left-arm plates, the Matron's robe train, the Abbot's scythe blade, and every crust cavity and crack line in the Deep Arena, so its crust cells never really opened. The SDK's own <code>Script Load Helper/Explosion.lua</code> builds about half of its debris shapes empty for the same reason. Armour and weapon plates were checked and are unaffected: they are built as (t, n × t, n), which is always right-handed (0 of 955 armour plates were left-handed).</dd>
       <dt>When</dt><dd>On every op whose parallelepiped axes form a left-handed basis.</dd>
       <dt>Where</dt><dd><code>Shape.Parallelepiped</code> as used by <code>Vox:Add</code>, <code>Remove</code> and <code>Paint</code>.</dd>
       <dt>Why</dt><dd>Measured: a mock that drops left-handed parallelepipeds reproduces QA's ray height maps cell for cell. The shape's inside test presumably assumes a positive determinant, so a negative one makes every point test as outside.</dd>
     </dl>
     <div class="extra">
-      <div><h4>Impact</h4><p>Whole sections of a world go missing with nothing in the error log, and anything placed on top of them floats. It surfaced as the "boulders hanging in the air" over the north and east edges. Any code that stamps oriented plates, including the armour on characters, needs checking.</p></div>
-      <div><h4>Mitigation</h4><p>Normalise handedness in the game's parallelepiped helper before every call: if <code>dot(a, cross(b, c)) &lt; 0</code>, negate <code>c</code>. The north and east cliffs were rebuilt this way (1,287 ops, 0 errors, with nobody online, followed by a full terrain save). A live ray audit afterwards found the lowest crest point at 6.7 m on the north edge (was 0.5 m) and 5.7 m on the east (was 0.0 m), 7.1 m and 6.9 m in front of the Spire, and no floating cells on either side. The four missing plaza banners were laid again.</p></div>
+      <div><h4>Impact</h4><p>Whole sections of a world go missing with nothing in the error log, and anything placed on top of them floats. It surfaced as the "boulders hanging in the air" over the north and east edges. Worse, it quietly removed core mechanics: homes that were never enclosed undercut the shelter system from launch, and a boss arena whose crust could never open. Any game that uses the SDK's explosion debris inherits the bug.</p></div>
+      <div><h4>Mitigation</h4><p>Normalise handedness in the game's parallelepiped helper before every call: if <code>dot(a, cross(b, c)) &lt; 0</code>, negate <code>c</code>. The north and east cliffs were rebuilt this way (1,287 ops, 0 errors, with nobody online, followed by a full terrain save). A live ray audit afterwards found the lowest crest point at 6.7 m on the north edge (was 0.5 m) and 5.7 m on the east (was 0.0 m), 7.1 m and 6.9 m in front of the Spire, and no floating cells on either side. The four missing plaza banners were laid again. Every builder now goes through the guarded helper, and fixes were verified live by probe: home edge pieces 0 of 3 → 3 of 3, with a boot-time rebuild of any missing piece; Spire-lair buttress tops 0.7 → 5.8 m, keystone placed; Deep Arena rebuilt, with a 1.9–2.4 m cavity under every sampled crust cell (was none).</p></div>
       <div><h4>Suggested fix</h4><p>Normalise the basis inside <code>Shape.Parallelepiped</code>, or at least raise an error for a left-handed or degenerate basis.</p></div>
     </div>
   </article>
@@ -821,6 +823,38 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Impact</h4><p>Silent no-ops are found only by auditing the world afterwards, often hours later and by a different agent. B36 went unnoticed through several builds for this reason.</p></div>
       <div><h4>Mitigation</h4><p>Procedural builds are verified with read-only ray audits (height maps and upward "underside" rays) rather than by trusting the queue's "done".</p></div>
       <div><h4>Suggested fix</h4><p>Pass the number of voxels changed to <code>OnFinished</code>, and log a warning when an op changes nothing.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b38">
+    <div class="rec-head"><span class="rec-id">B38</span><h3>SDK editor scripts cost about 3 ms per server frame when idle</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Every world, whether or not anyone is playing.</dd>
+      <dt>What</dt><dd>The script profiler on the live server, with nobody online, showed five SDK and editor scripts taking 3.0 ms per frame between them: Chat 1.25 ms, Click To Play Prompt 0.80 ms, Particle Updater 0.51 ms, Voxelizer 0.29 ms and Shape Manager 0.17 ms. All of Ashlight's game scripts together took under 0.6 ms.</dd>
+      <dt>When</dt><dd>Every server frame, including on an empty server.</dd>
+      <dt>Where</dt><dd>The platform's built-in Lua scripts that ship with every world.</dd>
+      <dt>Why</dt><dd>These scripts update every frame whether or not there is anything for them to do.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>At idle, platform scripts cost at least five times as much as the game's own. With the thin headroom in B17 (about 4 ms spare per frame at 60 fps), that is a large share of the budget spent before any gameplay runs.</p></div>
+      <div><h4>Mitigation</h4><p>None from game code: the scripts belong to the platform.</p></div>
+      <div><h4>Suggested fix</h4><p>Make these scripts event-driven or sleep them when idle (no chat messages, no pending prompts, no particles, no voxelize or shape jobs), and let a world disable the ones it doesn't use.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b39">
+    <div class="rec-head"><span class="rec-id">B39</span><h3>Server memory climbs on an idle, empty server</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Long-running worlds, and hosts that pack several worlds per machine.</dd>
+      <dt>What</dt><dd>QA memory samples after a restart showed the server process growing from 12.6 GB to 15.9 GB over 75 minutes with nobody online. The largest grower was the Voxel DB atlas, from 3.76 GB to 5.0 GB (about 17 MB per minute). The surface store and the Lua heap stayed flat. Before the previous restart, memory had plateaued at about 20.8 GB.</dd>
+      <dt>When</dt><dd>Continuously after a restart, on an idle server.</dd>
+      <dt>Where</dt><dd>The engine's Voxel DB atlas.</dd>
+      <dt>Why</dt><dd>Inferred: the atlas fills its cache over time and only evicts near a ceiling, given the earlier plateau. A leak isn't ruled out until the plateau is confirmed.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>An idle world gains gigabytes of memory, so its footprint depends on how long it has been up rather than on what players are doing. If the plateau doesn't hold, a long-running world eventually runs out of memory.</p></div>
+      <div><h4>Mitigation</h4><p>Being watched for a plateau. Nothing in game code touches the atlas.</p></div>
+      <div><h4>Suggested fix</h4><p>Cap the atlas with a documented, configurable budget, and expose its size and eviction counts through <code>Server:GetMemoryUsage()</code>.</p></div>
     </div>
   </article>
 </section>
@@ -877,6 +911,10 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B35</td><td>Retry with backoff for fetch failures (read back state before retrying world-changing Lua); boss logic checked in offline harnesses and server-side probes; human playtests for feel</td><td>Process</td></tr>
         <tr><td class="mono">B36</td><td>Handedness normalised in the parallelepiped helper; north and east cliffs rebuilt (lowest crest N 0.5 → 6.7 m, E 0.0 → 5.7 m, 0 floating cells); plaza banners restored</td><td>Shipped, verified live</td></tr>
         <tr><td class="mono">B37</td><td>Read-only ray audits (height maps, underside rays) after every procedural build</td><td>Process</td></tr>
+        <tr><td class="mono">B36 (update)</td><td>Guarded helper in every builder; homes 0/3 → 3/3 edge pieces with a boot-time rebuild; lair buttresses 0.7 → 5.8 m; Deep Arena crust cavities 0 → 1.9–2.4 m; armour confirmed unaffected</td><td>Shipped, verified live</td></tr>
+        <tr><td class="mono">B29 (siege)</td><td>Permanent Hollow pool of 14 for the siege: its warning phase holds 59 fps with a worst frame of 31 ms (was 48.5 fps, 140 ms)</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono">B38</td><td>None possible in game code</td><td>Reported</td></tr>
+        <tr><td class="mono">B39</td><td>Watching for a plateau</td><td>Monitoring</td></tr>
       </tbody>
     </table>
   </div>
