@@ -179,7 +179,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B25</td><td><span class="sev low">Low</span></td><td><a href="#b25">Platform popup covers the game's HUD</a></td><td>Browser clients</td></tr>
         <tr><td class="mono">B26</td><td><span class="sev med">Medium</span></td><td><a href="#b26">Screenshot tool can't show final visuals</a></td><td>Low LOD, no custom lighting</td></tr>
         <tr><td class="mono">B27</td><td><span class="sev high">High</span></td><td><a href="#b27"><code>Time.time</code> restarts on every Lua reload</a></td><td>Every hot reload</td></tr>
-        <tr><td class="mono">B28</td><td><span class="sev crit">Critical</span></td><td><a href="#b28">Clients keep terrain the server has removed</a></td><td>Distant static removes</td></tr>
+        <tr><td class="mono">B28</td><td><span class="sev crit">Critical</span></td><td><a href="#b28">Clients keep terrain the server has removed</a></td><td>Static removes 2–100 m from the camera</td></tr>
         <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part</td></tr>
       </tbody>
     </table>
@@ -659,15 +659,15 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   <article class="record crit" id="b28">
     <div class="rec-head"><span class="rec-id">B28</span><h3>Clients keep showing terrain the server has removed</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
     <dl class="w5">
-      <dt>Who</dt><dd>Anyone connected while a large terrain edit happens away from their camera.</dd>
-      <dt>What</dt><dd>A two-pass rebuild of the map's 160 m boundary (about 5 500 static ops) first left, then cleared, debris over the edge band. Afterwards the screenshot client still showed rows of rocks, pillars and brick hanging in the sky over the south and south-west edges. On the server, a 2 m grid of downward rays found no voxels above cliff height there (only the Spire tower), and no objects. The client was drawing terrain that no longer exists.</dd>
-      <dt>When</dt><dd>After static removes far from a client's camera, here 70–100 m away.</dd>
+      <dt>Who</dt><dd>Anyone connected while a large terrain edit happens, whether it is far from their camera or right in front of it.</dd>
+      <dt>What</dt><dd>A two-pass rebuild of the map's 160 m boundary (about 5 500 static ops) first left, then cleared, debris over the edge band. Afterwards the screenshot client still showed rows of rocks, pillars and brick hanging in the sky over the south and south-west edges. On the server, a 2 m grid of downward rays found no voxels above cliff height there (only the Spire tower), and no objects. The client was drawing terrain that no longer exists.<br><br><b>Update:</b> it also happens close up. After about 600 static edits in the hub (rebuilding the Emberheart and paving the plaza), the screenshot client drew a large blocky "room" filling the view at roughly (0, 0–6, 5–12), inside Cinderhold. On the server, a horizontal ray from (0, 4, 14) toward −Z hit nothing, and downward rays at z = 5–13 all found the plaza floor at y = 0.34.</dd>
+      <dt>When</dt><dd>After static removes 70–100 m from a client's camera (the edge rebuild), and after many edits 2–10 m from it (the hub rework).</dd>
       <dt>Where</dt><dd>Client static voxel streaming. The same mechanism as B3, where a client kept collision the server no longer had.</dd>
-      <dt>Why</dt><dd>Inferred: removals outside a client's streaming or LOD focus aren't pushed, or are superseded, and the client keeps its cached chunk until something forces a reload.</dd>
+      <dt>Why</dt><dd>Inferred: the client keeps a cached chunk after the server has changed it, until something forces a reload. Distance from the camera is not the trigger, since phantom chunks also appeared 2–10 m away. A burst of many edits to the same chunks is the common factor in both cases, which points at dropped or out-of-order static deltas, as in B3.</dd>
     </dl>
     <div class="extra">
-      <div><h4>Impact</h4><p>Players see walls and debris that aren't there: "odd walls that pop up". After any live terrain rework, the world looks different to each client depending on when they connected.</p></div>
-      <div><h4>Mitigation</h4><p>Large reworks run only when nobody is online (the World Dresser and Deep Arena upgrades ran on an empty server). The Terrain Keeper saves afterwards, so fresh connections stream the current terrain. Server-side ray audits are used as ground truth instead of screenshots.</p></div>
+      <div><h4>Impact</h4><p>Players see walls and debris that aren't there: "odd walls that pop up". After any live terrain rework, the world looks different to each client depending on when they connected. In the hub, a phantom block can fill the whole view.</p></div>
+      <div><h4>Mitigation</h4><p>Large reworks run only when nobody is online (the World Dresser and Deep Arena upgrades ran on an empty server). The Terrain Keeper saves afterwards, so fresh connections stream the current terrain. Server-side ray audits are used as ground truth instead of screenshots. The same rule now covers hub and plaza dressing, not only map-scale reworks.</p></div>
       <div><h4>Suggested fix</h4><p>Version static chunks and have clients re-request any chunk whose version changed, even outside their LOD focus. Expose a working "resync region" call.</p></div>
     </div>
   </article>
@@ -725,6 +725,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B28</td><td>Terrain reworks scheduled for an empty server; server-side ray audits; floating props found and grounded (a dead tree hung 35 m up, and an oil drum 1.3 m up after the Pit rim was reshaped)</td><td>Process + fixed</td></tr>
         <tr><td class="mono">Arena</td><td>Pit rim reshaped into crags; stair access to all three high-ground shelves verified with a 0.5 m-step flood fill in both directions</td><td>Verified live</td></tr>
         <tr><td class="mono">B29</td><td>Pre-built enemy rig pool; spawn 320 ms → 4–20 ms</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono">B28 (update)</td><td>Phantom geometry also seen 2–10 m from the camera after about 600 hub edits; server rays confirm the plaza is clear. Hub and plaza dressing now follows the empty-server rule too</td><td>Process</td></tr>
         <tr><td class="mono">B23 (follow-up)</td><td>Mouse clicks and UI keys are now event-queued too (attacks, build placement, menus)</td><td>Shipped</td></tr>
         <tr><td class="mono">B19 (follow-up)</td><td>The Keeper's automatic empty-server save fired twice on its own: the journal was cleared and the terrain marked saved</td><td>Verified live</td></tr>
         <tr><td class="mono">"Odd walls"</td><td>The 12 bare ruin shells were rebuilt as dressed ruined buildings (2 168 ops, 0 errors). The hub wall became a scavenged palisade, ash patches became flat paint, the sphere berm became a continuous boundary, and test structures were removed through the journal</td><td>Shipped; edge being made more natural</td></tr>
