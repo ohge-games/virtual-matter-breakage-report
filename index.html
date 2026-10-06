@@ -180,7 +180,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B26</td><td><span class="sev med">Medium</span></td><td><a href="#b26">Screenshot tool can't show final visuals</a></td><td>Low LOD, no custom lighting</td></tr>
         <tr><td class="mono">B27</td><td><span class="sev high">High</span></td><td><a href="#b27"><code>Time.time</code> restarts on every Lua reload</a></td><td>Every hot reload</td></tr>
         <tr><td class="mono">B28</td><td><span class="sev crit">Critical</span></td><td><a href="#b28">Clients keep terrain the server has removed</a></td><td>Static removes 2–100 m from the camera</td></tr>
-        <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part; ramp worst 893 ms</td></tr>
+        <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part; ramp worst 893 → 73 ms</td></tr>
         <tr><td class="mono">B30</td><td><span class="sev med">Medium</span></td><td><a href="#b30">The SDK character controller jumps 2.5 m and has no slope limit</a></td><td>Walls under ~2.6 m are climbable</td></tr>
         <tr><td class="mono">B31</td><td><span class="sev med">Medium</span></td><td><a href="#b31">Scaled rig parts: forced rays miss them and their units don't match the world</a></td><td>Part scale 0.19; forced ray hit nothing</td></tr>
         <tr><td class="mono">B32</td><td><span class="sev med">Medium</span></td><td><a href="#b32">Every Lua reload destroys runtime-built objects</a></td><td class="num">10–30 s of stutter per deploy</td></tr>
@@ -192,6 +192,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B38</td><td><span class="sev low">Low</span></td><td><a href="#b38">SDK editor scripts cost ~3 ms per server frame when idle</a></td><td class="num">3.0 ms vs &lt;0.6 ms for the game</td></tr>
         <tr><td class="mono">B39</td><td><span class="sev low">Low</span></td><td><a href="#b39">Server memory climbs on an idle, empty server</a></td><td class="num">Atlas capped at 5,000 MB; +7 MB/min after</td></tr>
         <tr><td class="mono">B40</td><td><span class="sev low">Low</span></td><td><a href="#b40">Inactive objects ignore forced raycasts</a></td><td>Forced ray returns nil</td></tr>
+        <tr><td class="mono">B41</td><td><span class="sev high">High</span></td><td><a href="#b41"><code>AE:GetDebugTime()</code> restarts with the server process</a></td><td>Every server restart</td></tr>
       </tbody>
     </table>
   </div>
@@ -662,7 +663,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Cooldowns, respawn timers and regrowth timers that persist across reloads silently stretch or never fire.</p></div>
-      <div><h4>Mitigation shipped</h4><p>The Terrain Keeper uses <code>AE:GetDebugTime()</code> (wall clock). The other game timers were audited: they live only in memory, or persist as "seconds left" rather than absolute times.</p></div>
+      <div><h4>Mitigation shipped</h4><p>The Terrain Keeper first switched to <code>AE:GetDebugTime()</code>, believing it to be wall-clock time; it turned out to be process uptime (B41), and a persistent game clock replaced it. The other game timers were audited: they live only in memory, or persist as "seconds left" rather than absolute times.</p></div>
       <div><h4>Suggested fix</h4><p>Document the reset, and offer a monotonic per-process clock (for example <code>Time.uptime</code>) for anything that persists.</p></div>
     </div>
   </article>
@@ -694,7 +695,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Spawning enemies mid-fight stutters everyone. Combined with B17 (per-object cost) and B18 (clients can't instance assets), animated multi-part characters are expensive at every stage.</p></div>
-      <div><h4>Mitigation shipped</h4><p>A spawn pool. Six enemy rigs are pre-built while inactive, one part every 0.35 s when calm and every 1.5 s during fights. A spawn activates a pooled rig. Measured spawn cost: 4–20 ms, down from about 320 ms. Bulwarks now come from their own pre-built pool, and the Matron's 10 parts are staged before her fight (her spawn measured 10 ms), so neither binds assets mid-combat.</p></div>
+      <div><h4>Mitigation shipped</h4><p>A spawn pool. Six enemy rigs are pre-built while inactive, one part every 0.35 s when calm and every 1.5 s during fights. A spawn activates a pooled rig. Measured spawn cost: 4–20 ms, down from about 320 ms. Bulwarks now come from their own pre-built pool, and the Matron's 10 parts are staged before her fight (her spawn measured 10 ms), so neither binds assets mid-combat. Dead Hollows are recycled into the pool, and cosmetic voxel detail is baked into variant assets rather than stamped at spawn (see the stress test below).</p></div>
       <div><h4>Suggested fix</h4><p>Share voxel data between instances of the same asset (copy-on-write), and load or bind assets asynchronously off the main thread.</p></div>
     </div>
     <div>
@@ -706,12 +707,17 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
           <tbody>
             <tr><td>Baseline, ramp-up</td><td class="num">30.4</td><td class="num">–</td><td class="num">508 ms</td><td class="num">893 ms</td><td>Synchronous rig builds when the pool ran dry</td></tr>
             <tr><td>Baseline, steady (26 Hollows + 2 bosses)</td><td class="num">50–51</td><td class="num">26–27 ms</td><td class="num">–</td><td class="num">84–94 ms</td><td>Script cost: Hollow 3.1 ms (39 instances), Body 1.1 ms</td></tr>
-            <tr><td>With fixes, steady</td><td class="num">56.3</td><td class="num">21.6 ms</td><td class="num">23.8 ms</td><td class="num">29 ms</td><td>No cold builds mid-fight, throttled pool rebuild, jittered AI think times, lighter static jobs</td></tr>
-            <tr><td>With fixes, ramp-up</td><td class="num">–</td><td class="num">–</td><td class="num">341 ms</td><td class="num">663 ms</td><td>Spikes remain; under investigation</td></tr>
+            <tr><td>Round 11 fixes, steady</td><td class="num">56.3</td><td class="num">21.6 ms</td><td class="num">23.8 ms</td><td class="num">29 ms</td><td>No cold builds mid-fight, throttled pool rebuild, jittered AI think times, lighter static jobs</td></tr>
+            <tr><td>Round 11 fixes, ramp-up</td><td class="num">–</td><td class="num">–</td><td class="num">341 ms</td><td class="num">663 ms</td><td>Spikes remained</td></tr>
+            <tr><td>Round 12, ramp-up</td><td class="num">45.4</td><td class="num">–</td><td class="num">65.5 ms</td><td class="num">480 ms</td><td>Dead Hollows recycled into the pool, crust pre-worn at pool time, pool rebuild throttled rather than stopped</td></tr>
+            <tr><td>Round 12, steady siege (22 Hollows)</td><td class="num">53.9</td><td class="num">25 ms</td><td class="num">–</td><td class="num">76 ms</td><td>The siege no longer starves at 16 Hollows</td></tr>
+            <tr><td><b>Round 13, ramp-up</b></td><td class="num"><b>53.3</b></td><td class="num">–</td><td class="num"><b>60.9 ms</b></td><td class="num"><b>73 ms</b></td><td>Crust baked into assets: spawns do no voxel ops. The only frames over 100 ms are the bosses' own staged builds at spawn, plus a 25 ms ledger encode</td></tr>
+            <tr><td><b>Round 13, steady</b> (22 Hollows + Colossus + Matron + siege)</td><td class="num"><b>53.4</b></td><td class="num">–</td><td class="num"><b>30.5 ms</b></td><td class="num"><b>51 ms</b></td><td>Baseline steady worst was 84–94 ms; the pool trims back to 14 afterwards</td></tr>
           </tbody>
         </table>
       </div>
-      <p>The fixes bring the steady state close to the idle budget, but ramp-up spikes are still under investigation. A siege also starves at 16 Hollows, because the pool can't refill mid-fight without the stalls above. Pool recycling and per-spike attribution are in progress.</p>
+      <p><b>Spike attribution (resolved).</b> Wrapping 1,436 server functions during the ramp showed that every 300–716 ms frame was a spawn running the Hollow crust builder: 7–23 <code>Vox:Add</code> rubble plates on the torso part, which has scale 0.19. Lua took only 12–25 ms of that; the rest was the engine committing voxels. At scale 0.19, a 0.3 m plate is about 140 times as many voxels as the same plate at scale 1 (see the scaled-part op costs under Measured limits). The fix was to bake the crust into three torso variant assets with <code>VoxelData:SaveAs</code>, so spawns do no voxel ops at all, and to have hits paint chips instead of carving them. Pool part binds also showed up (36–72 ms for Hollows and 40–80 ms for Bulwarks), and are now paced. One 469 ms engine-side frame with no voxel ops in round 12 is still unexplained.</p>
+      <p><b>Still open:</b> forging armour onto a player rig still hitches: 43.5 fps, with 36 frames over 50 ms and a worst frame of 83 ms, for about 6 s. A bake is planned.</p>
     </div>
   </article>
 
@@ -890,6 +896,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Let a forced ray hit its target regardless of active state, or return an explicit "target inactive" result instead of nil.</p></div>
     </div>
   </article>
+
+  <article class="record high" id="b41">
+    <div class="rec-head"><span class="rec-id">B41</span><h3><code>AE:GetDebugTime()</code> restarts with the server process</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Any game that persists timestamps across server restarts: respawn timers, cooldowns, rate limits, save schedules.</dd>
+      <dt>What</dt><dd>The server restarted unexpectedly at about 22:24. Memory was at 13.1 of 32 GB, so it wasn't out of memory, and the cause is unknown. Right afterwards, <code>AE:GetDebugTime()</code> read 79 s: it is process uptime, not wall-clock time. Every timer Ashlight had persisted as "wall clock" was wrong after the restart: the Abbot's 45-minute respawn, the siege's once-an-hour limit, the Omen ward and Abbot-stirs timers, and the Terrain Keeper's save gaps. Game state saved every 2 minutes was reloaded from its last disk save, so a one-shot world repair made just before (re-seating a stacked home) was reverted.</dd>
+      <dt>When</dt><dd>On every server process restart, planned or not.</dd>
+      <dt>Where</dt><dd><code>AE:GetDebugTime()</code>; the platform's restart behaviour. The CLI's own agent guide lists <code>AE:GetDebugTime()</code> as "wall clock", next to <code>Time.time</code> (simulation time).</dd>
+      <dt>Why</dt><dd>The sandbox removes <code>os.time</code>, and no wall-clock or persistent clock replaces it. The only clocks are simulation time, which restarts on every Lua reload (B27), and process uptime, which restarts with the process.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Timers that persist across restarts silently fire early, or never, after a restart. With no visible cause and no warning before the restart, the last few minutes of game state are lost, along with any repair made in that window.</p></div>
+      <div><h4>Mitigation shipped</h4><p>A persistent game clock: seconds accumulated in the ledger, plus the uptime since boot, with older timestamps clamped to "now". Downtime doesn't count toward any timer. The ledger is saved to disk immediately after any one-shot repair, and a boot pass re-applies home repairs on its own.</p></div>
+      <div><h4>Suggested fix</h4><p>Expose a real wall-clock time (for example <code>Time.unix</code>), correct the guide's "wall clock" label, and log or announce the reason for every server restart.</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -924,7 +946,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B23</td><td>Event-queued key input in the player script</td><td>Shipped, verified live</td></tr>
         <tr><td class="mono">B24</td><td>Audio module re-indexes on asset sync and falls back to built-in sounds</td><td>Shipped</td></tr>
         <tr><td class="mono">B26</td><td>Server rigs pose at 4 Hz in the headless client; visual checks done in a visible browser client</td><td>Process</td></tr>
-        <tr><td class="mono">B27</td><td>Persisted timers use wall-clock time</td><td>Shipped</td></tr>
+        <tr><td class="mono">B27</td><td>Persisted timers moved off <code>Time.time</code>; now on the persistent game clock (B41)</td><td>Shipped</td></tr>
         <tr><td class="mono">B28</td><td>Terrain reworks scheduled for an empty server; server-side ray audits; floating props found and grounded (a dead tree hung 35 m up, and an oil drum 1.3 m up after the Pit rim was reshaped)</td><td>Process + fixed</td></tr>
         <tr><td class="mono">Arena</td><td>Pit rim reshaped into crags; stair access to all three high-ground shelves verified with a 0.5 m-step flood fill in both directions</td><td>Verified live</td></tr>
         <tr><td class="mono">B29</td><td>Pre-built enemy rig pool; spawn 320 ms → 4–20 ms</td><td>Shipped, measured</td></tr>
@@ -951,6 +973,9 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B29 (stress test)</td><td>No cold builds mid-fight, throttled pool rebuild, jittered AI think, lighter static jobs: steady 50–51 → 56.3 fps, worst frame 84–94 → 29 ms. Ramp-up spikes (p99 341 ms) still under investigation</td><td>Partly fixed, measured</td></tr>
         <tr><td class="mono">B39 (update)</td><td>Atlas confirmed capped at 5,000 MB; residual growth of ~7 MB/min watched</td><td>Monitoring</td></tr>
         <tr><td class="mono">B40</td><td>Parked rigs activated briefly, between fights, while being dressed</td><td>Shipped</td></tr>
+        <tr><td class="mono">B29 (resolved)</td><td>Spawn spikes traced to voxel adds on scaled parts; crust baked into 3 variant assets, chips painted, pools paced. Ramp p99 508 → 60.9 ms, worst 893 → 73 ms; steady worst 84–94 → 51 ms</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono">B29 (open)</td><td>Forging armour on a player rig: 43.5 fps, worst 83 ms for ~6 s; bake planned</td><td>Open</td></tr>
+        <tr><td class="mono">B41</td><td>Persistent game clock in the ledger; immediate ledger save after one-shot repairs; boot-time home repair</td><td>Shipped</td></tr>
       </tbody>
     </table>
   </div>
@@ -984,6 +1009,10 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td>Networked payload</td><td class="num">16 / 64 / 256 MB</td><td class="num">All accepted; 3.57 s ping</td><td>Broke (B5)</td></tr>
         <tr><td>Lua heap</td><td class="num">256 MB → 3 GB</td><td class="num">No cap; process 21.7 GB</td><td>Broke (B6)</td></tr>
         <tr><td>Client particles</td><td class="num">500 / 2k / 8k</td><td class="num">29.2 / 26.2 / 12.7 fps</td><td>Broke (B9)</td></tr>
+        <tr><td>Voxel op on a 0.2-scale part</td><td class="num">Add plate 0.28 m / 0.15 m</td><td class="num">+114 ms / +33 ms frame time</td><td>Expensive (B29)</td></tr>
+        <tr><td>Voxel op on a 0.2-scale part</td><td class="num">Paint plate 0.28 m / remove sphere 0.24 m</td><td class="num">+17 ms / +64 ms frame time</td><td>Paint is the cheap option</td></tr>
+        <tr><td>Same Add on a scale-1 object</td><td class="num">Plate 0.28 m</td><td class="num">+0 ms</td><td>Held</td></tr>
+        <tr><td>Bind a template rig part</td><td class="num">1 part</td><td class="num">≈60 ms Lua</td><td>Expensive (B29)</td></tr>
       </tbody>
     </table>
   </div>
@@ -999,6 +1028,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div><b>Persistence</b><p>Player homes, fuel levels and quest state survived Lua reloads through a ledger serialized as Lua-literal strings.</p></div>
     <div><b>Live building</b><p>A 160 m map, five segmented character rigs and ten tutorial steps were all built through the CLI without opening the editor.</p></div>
     <div><b>Runtime voxel detail on characters</b><p>Worn armour is stamped as voxels straight into each player's own copies of the rig parts, so it adds no objects. Each plate is an oriented box built from the part's transform at the moment its edit runs, which keeps it correct on a moving character. Verified on a live dummy at tiers 1 and 3. Caveat (B31): measure the live rig; offline mocks got the part scale wrong.</p></div>
+    <div><b>Baking runtime detail into assets</b><p>Stamping a template copy once and calling <code>VoxelData:SaveAs</code> stores the stamps in a new asset. Bound copies measured 22–26k voxels against 15.9k plain, so the detail survives, and spawning from the baked variants costs no voxel ops. It is now used live for Hollow crusts. Cosmetic detail on scaled rigs should be baked, not stamped at runtime.</p></div>
   </div>
 </section>
 
