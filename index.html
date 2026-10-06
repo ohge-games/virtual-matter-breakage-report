@@ -180,6 +180,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B26</td><td><span class="sev med">Medium</span></td><td><a href="#b26">Screenshot tool can't show final visuals</a></td><td>Low LOD, no custom lighting</td></tr>
         <tr><td class="mono">B27</td><td><span class="sev high">High</span></td><td><a href="#b27"><code>Time.time</code> restarts on every Lua reload</a></td><td>Every hot reload</td></tr>
         <tr><td class="mono">B28</td><td><span class="sev crit">Critical</span></td><td><a href="#b28">Clients keep terrain the server has removed</a></td><td>Distant static removes</td></tr>
+        <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part</td></tr>
       </tbody>
     </table>
   </div>
@@ -670,6 +671,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Version static chunks and have clients re-request any chunk whose version changed, even outside their LOD focus. Expose a working "resync region" call.</p></div>
     </div>
   </article>
+
+  <article class="record high" id="b29">
+    <div class="rec-head"><span class="rec-id">B29</span><h3>Every voxel object deep-copies its asset on the main thread</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Every player whenever a character, prop or piece of debris is spawned.</dd>
+      <dt>What</dt><dd>Spawning one 5-part enemy rig froze the server for about 320 ms. Profiling showed <code>vd.asset = template.asset</code> at 33–83 ms per part, and <code>CreateObject</code> + <code>AddComponent</code> at about 11 ms. <code>Scene:CloneObject</code> was no cheaper (56–96 ms per part). Assigning the same asset a second time cost 75 ms again.</dd>
+      <dt>When</dt><dd>On every object that gets voxel content from an asset or a clone.</dd>
+      <dt>Where</dt><dd>VoxelData asset binding and object cloning.</dd>
+      <dt>Why</dt><dd>Inferred: the voxel data is copied per instance, with no sharing or instancing of identical assets.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Spawning enemies mid-fight stutters everyone. Combined with B17 (per-object cost) and B18 (clients can't instance assets), animated multi-part characters are expensive at every stage.</p></div>
+      <div><h4>Mitigation shipped</h4><p>A spawn pool. Six enemy rigs are pre-built while inactive, one part every 0.35 s when calm and every 1.5 s during fights. A spawn activates a pooled rig. Measured spawn cost: 4–20 ms, down from about 320 ms.</p></div>
+      <div><h4>Suggested fix</h4><p>Share voxel data between instances of the same asset (copy-on-write), and load or bind assets asynchronously off the main thread.</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -707,6 +724,8 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B27</td><td>Persisted timers use wall-clock time</td><td>Shipped</td></tr>
         <tr><td class="mono">B28</td><td>Terrain reworks scheduled for an empty server; server-side ray audits; floating props found and grounded (a dead tree hung 35 m up, and an oil drum 1.3 m up after the Pit rim was reshaped)</td><td>Process + fixed</td></tr>
         <tr><td class="mono">Arena</td><td>Pit rim reshaped into crags; stair access to all three high-ground shelves verified with a 0.5 m-step flood fill in both directions</td><td>Verified live</td></tr>
+        <tr><td class="mono">B29</td><td>Pre-built enemy rig pool; spawn 320 ms → 4–20 ms</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono">B23 (follow-up)</td><td>Mouse clicks and UI keys are now event-queued too (attacks, build placement, menus)</td><td>Shipped</td></tr>
         <tr><td class="mono">B19 (follow-up)</td><td>The Keeper's automatic empty-server save fired twice on its own: the journal was cleared and the terrain marked saved</td><td>Verified live</td></tr>
         <tr><td class="mono">"Odd walls"</td><td>The 12 bare ruin shells were rebuilt as dressed ruined buildings (2 168 ops, 0 errors). The hub wall became a scavenged palisade, ash patches became flat paint, the sphere berm became a continuous boundary, and test structures were removed through the journal</td><td>Shipped; edge being made more natural</td></tr>
       </tbody>
