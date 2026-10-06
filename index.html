@@ -171,7 +171,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B17</td><td><span class="sev high">High</span></td><td><a href="#b17">Fixed per-object cost and thin headroom</a></td><td class="num">~21 µs/object, ~4 ms spare</td></tr>
         <tr><td class="mono">B18</td><td><span class="sev med">Medium</span></td><td><a href="#b18">Clients can't instance assets</a></td><td>No client-side rig parts</td></tr>
         <tr><td class="mono">B19</td><td><span class="sev crit">Critical</span></td><td><a href="#b19">Saving the terrain freezes the server</a></td><td class="num">33–60+ s for 250 MB</td></tr>
-        <tr><td class="mono">B20</td><td><span class="sev high">High</span></td><td><a href="#b20">Terrain edits aren't persistent by default</a></td><td>Every gameplay edit</td></tr>
+        <tr><td class="mono">B20</td><td><span class="sev high">High</span></td><td><a href="#b20">Voxel edits aren't persistent by default</a></td><td>Every gameplay edit; procedural props</td></tr>
         <tr><td class="mono">B21</td><td><span class="sev high">High</span></td><td><a href="#b21">Sync overwrite race, again</a></td><td>2 saves &lt;10 s apart</td></tr>
         <tr><td class="mono">B22</td><td><span class="sev med">Medium</span></td><td><a href="#b22">Hidden browser tabs throttle the client</a></td><td class="num">6–12 fps</td></tr>
         <tr><td class="mono">B23</td><td><span class="sev high">High</span></td><td><a href="#b23">Polled input drops fast taps</a></td><td>Press+release in one frame</td></tr>
@@ -185,6 +185,8 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B31</td><td><span class="sev med">Medium</span></td><td><a href="#b31">Scaled rig parts: forced rays miss them and their units don't match the world</a></td><td>Part scale 0.19; forced ray hit nothing</td></tr>
         <tr><td class="mono">B32</td><td><span class="sev med">Medium</span></td><td><a href="#b32">Every Lua reload destroys runtime-built objects</a></td><td class="num">10–30 s of stutter per deploy</td></tr>
         <tr><td class="mono">B33</td><td><span class="sev low">Low</span></td><td><a href="#b33">No per-object time scale, no UI gradients</a></td><td>Hit-stop and vignettes faked</td></tr>
+        <tr><td class="mono">B34</td><td><span class="sev low">Low</span></td><td><a href="#b34">New scripts can't be attached for about a minute</a></td><td>"Script file does not exist"</td></tr>
+        <tr><td class="mono">B35</td><td><span class="sev med">Medium</span></td><td><a href="#b35">A coding harness can't run automated playtests</a></td><td>~1 in 3 calls "fetch failed"; fly-cam client</td></tr>
       </tbody>
     </table>
   </div>
@@ -533,17 +535,17 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b20">
-    <div class="rec-head"><span class="rec-id">B20</span><h3>Gameplay terrain edits aren't persistent by default</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B20</span><h3>Gameplay voxel edits aren't persistent by default</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Players who dig, salvage, build or destroy, which in a voxel game is everyone.</dd>
-      <dt>What</dt><dd>After hours of play the static terrain reported <code>isSaved = false</code>. Only the scene hierarchy had been saved every 2 minutes, which excludes voxels. A restart would revert salvaged walls, burned blight, broken ruins and dug holes. Systems that rebuild from saved game state (homes, blight, arena) would then re-add geometry on top of the reverted terrain. Players see walls that pop back up, and growth that stacks.</dd>
+      <dt>What</dt><dd>After hours of play the static terrain reported <code>isSaved = false</code>. Only the scene hierarchy had been saved every 2 minutes, which excludes voxels. A restart would revert salvaged walls, burned blight, broken ruins and dug holes. Systems that rebuild from saved game state (homes, blight, arena) would then re-add geometry on top of the reverted terrain. Players see walls that pop back up, and growth that stacks.<br><br><b>Update:</b> dynamic objects lose procedural voxels too. After a server restart, all 12 oil drums (<code>save = true</code>, each built from four <code>Vox:Add</code> cylinders with <code>Force(obj)</code>) were back in the scene, active and with their VoxelData component, but with volume 0, zero bounds and no asset: invisible, with no error. The scene's dynamic-prop count went from 37 to 25.</dd>
       <dt>When</dt><dd>On any server restart.</dd>
-      <dt>Where</dt><dd>The split between <code>SaveSceneHierarchy</code> (cheap, no voxels) and voxel saves (B19).</dd>
+      <dt>Where</dt><dd>The split between <code>SaveSceneHierarchy</code> (cheap, no voxels) and voxel saves (B19). It applies to static terrain and to procedurally built dynamic objects; only asset-backed VoxelData, or an explicit <code>VoxelData:Save()</code>, survives.</dd>
       <dt>Why</dt><dd>The cheap save path is the documented default. The voxel save path is too expensive to run while anyone is playing.</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>"Persistent world" is the game's promise, and the engine's cheap save path quietly breaks it.</p></div>
-      <div><h4>Mitigation shipped</h4><p>Terrain Keeper journal (see B19). Harvesting, digging, blight burning and lean-to shelters all go through it. Rebuild-from-state systems use exact saved positions, so replaying them is idempotent.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Terrain Keeper journal (see B19). Harvesting, digging, blight burning and lean-to shelters all go through it. Rebuild-from-state systems use exact saved positions, so replaying them is idempotent. For procedural props, the fix is to rebuild on boot whenever the VoxelData is empty, not only when the object is missing, or to save the prop as an asset.</p></div>
       <div><h4>Suggested fix</h4><p>Include voxel deltas in the hierarchy save (journal or dirty-chunk diffs), or warn makers when a world has gone more than N minutes with unsaved static edits.</p></div>
     </div>
   </article>
@@ -751,8 +753,40 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Common combat-feel techniques need workarounds in game code, which cost client time and are easy to get wrong.</p></div>
-      <div><h4>Mitigation (staged)</h4><p>The client wraps each character rig's update and feeds it 5% of the frame time during a hit-stop; the rig still follows its root, and its springs hold. The directional damage vignette is built from four edges of two overlapping translucent bands (a stepped gradient), updated only when the quantised alpha changes. Both are staged and not yet verified in the engine.</p></div>
+      <div><h4>Mitigation shipped</h4><p>The client wraps each character rig's update and feeds it 5% of the frame time during a hit-stop; the rig still follows its root, and its springs hold. The directional damage vignette is built from four edges of two overlapping translucent bands (a stepped gradient), updated only when the quantised alpha changes. Both are deployed and verified server-side.</p></div>
       <div><h4>Suggested fix</h4><p>Add a per-object (or per-hierarchy) time scale that scripts and animation read, and a gradient fill for MUI panels.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b34">
+    <div class="rec-head"><span class="rec-id">B34</span><h3>New scripts can't be attached for about a minute after they sync</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers and agents who add a new script file and attach it straight away.</dd>
+      <dt>What</dt><dd><code>AddScript("Ashlight/Combat FX.lua")</code>, run right after the file synced, failed with "Script file does not exist". The same call worked about a minute later, once the server had written the file's <code>.zma</code> metadata (seen as <code>Combat FX.lua.zma</code> appearing in the mirror).</dd>
+      <dt>When</dt><dd>For roughly a minute after a new <code>.lua</code> file first syncs.</dd>
+      <dt>Where</dt><dd>Asset registration of new script files on the server; <code>Object:AddScript</code>.</dd>
+      <dt>Why</dt><dd>Inferred: a script only becomes an attachable asset once its metadata has been written, and that happens on a delay after the file itself arrives.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Deploy scripts that create and attach a new module in one step fail on the first try, and the error suggests the file is missing rather than not yet registered.</p></div>
+      <div><h4>Mitigation</h4><p>Wait for the <code>.zma</code> to appear in the mirror, or retry <code>AddScript</code>, before attaching a new script.</p></div>
+      <div><h4>Suggested fix</h4><p>Register a script as soon as its file lands, or have <code>AddScript</code> wait for a pending registration. At minimum, say "not yet registered" instead of "does not exist".</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b35">
+    <div class="rec-head"><span class="rec-id">B35</span><h3>A coding harness can't run automated playtests</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Agents and makers who build through the CLI and want to test gameplay without a human at the keyboard.</dd>
+      <dt>What</dt><dd>Two problems. First, over about 10 minutes, roughly 1 in 3 CLI <code>run-lua</code> and <code>errors</code> calls returned "fetch failed" with no HTTP status, then worked on retry. Second, a native client launched with <code>virtualmatter open</code> joins in edit mode: its player character is spawned but not simulated, so neither a client-side <code>charCtrl:setPosition</code> nor server-side writes move it.</dd>
+      <dt>When</dt><dd>The fetch failures were intermittent, during normal building. The edit-mode client happens on every CLI launch.</dd>
+      <dt>Where</dt><dd>The CLI's connection to the session; the native client's launch mode.</dd>
+      <dt>Why</dt><dd>The CLI-launched client opens the editor view with a fly camera rather than play mode. The cause of the fetch failures isn't visible from outside the platform.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Boss fights and traversal (for example, falling into the Undercroft vault) can't be playtested automatically from a coding harness, so they need a human playtester. Flaky calls also make long verification scripts fail partway through.</p></div>
+      <div><h4>Mitigation</h4><p>A retry wrapper for fetch failures. Boss logic is verified in offline harnesses plus server-side state probes, with the final feel check left to a human.</p></div>
+      <div><h4>Suggested fix</h4><p>Add an <code>open --play</code> mode (or a headless play client) whose character can be driven from <code>run-lua</code>, and have the CLI retry transient network failures itself and report them with a status.</p></div>
     </div>
   </article>
 </section>
@@ -802,7 +836,11 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B31</td><td>Stamped armour visuals reverted before players saw them; rebuilding from live part measurements; offline mocks must model scaled flat parts</td><td>Reverted, in progress</td></tr>
         <tr><td class="mono">B32</td><td>Deploys batched and made with nobody online where possible; adopting the pool after reload tried and reverted</td><td>Process</td></tr>
         <tr><td class="mono">B19 (update)</td><td>One automatic empty-server save measured at a 33.4 s main-thread stall; the Keeper saves non-journaled edits at most hourly</td><td>Measured</td></tr>
-        <tr><td class="mono">B33</td><td>Hit-stop by scaling each rig's update time; vignette from stepped translucent bands</td><td>Staged, unverified</td></tr>
+        <tr><td class="mono">B33</td><td>Hit-stop by scaling each rig's update time; vignette from stepped translucent bands</td><td>Shipped</td></tr>
+        <tr><td class="mono">B20 (update)</td><td>Procedural props (oil drums) found empty after a restart; rebuild on boot when the VoxelData is empty, or save props as assets</td><td>Found; fix proposed</td></tr>
+        <tr><td class="mono">B33 (update)</td><td>Hit-stop and directional damage vignette deployed</td><td>Shipped, verified server-side</td></tr>
+        <tr><td class="mono">B34</td><td>Wait for the <code>.zma</code> or retry before attaching a new script</td><td>Process</td></tr>
+        <tr><td class="mono">B35</td><td>Retry wrapper for fetch failures; boss logic checked in offline harnesses and server-side probes; human playtests for feel</td><td>Process</td></tr>
       </tbody>
     </table>
   </div>
@@ -850,6 +888,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div><b>Custom rendering</b><p>A full-screen light pass rewritten in <code>ssao2.fs</code> hot-reloaded live and carried game state through the fog uniforms.</p></div>
     <div><b>Persistence</b><p>Player homes, fuel levels and quest state survived Lua reloads through a ledger serialized as Lua-literal strings.</p></div>
     <div><b>Live building</b><p>A 160 m map, five segmented character rigs and ten tutorial steps were all built through the CLI without opening the editor.</p></div>
+    <div><b>Runtime voxel detail on characters</b><p>Worn armour is stamped as voxels straight into each player's own copies of the rig parts, so it adds no objects. Each plate is an oriented box built from the part's transform at the moment its edit runs, which keeps it correct on a moving character. Verified on a live dummy at tiers 1 and 3. Caveat (B31): measure the live rig; offline mocks got the part scale wrong.</p></div>
   </div>
 </section>
 
