@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Field report: where the Virtual Matter voxel engine broke while building and stress-testing a full multiplayer survival game, with measured limits, repros, suggested fixes and a mitigation log.">
+<title>Virtual Matter Breakage Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a single engineering-report column; summary table first, then one 5W record per breakage, then measured limits. */
+:root {
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --fg: #15181d;
+  --muted: #5b6370;
+  --line: #d9dde3;
+  --accent: #2f4fa2;
+  --code-bg: #eceef2;
+  --sev-crit: #b3261e;
+  --sev-high: #c2570c;
+  --sev-med: #8a6d00;
+  --sev-low: #5b6370;
+  --ok: #1f7a4a;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111317; --surface: #1a1d23; --fg: #e7e9ed; --muted: #9aa2ae; --line: #2c3139;
+    --accent: #8fa8ec; --code-bg: #22262d;
+    --sev-crit: #f2766d; --sev-high: #f39a52; --sev-med: #e0c04d; --sev-low: #9aa2ae; --ok: #5cc98d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111317; --surface: #1a1d23; --fg: #e7e9ed; --muted: #9aa2ae; --line: #2c3139;
+  --accent: #8fa8ec; --code-bg: #22262d;
+  --sev-crit: #f2766d; --sev-high: #f39a52; --sev-med: #e0c04d; --sev-low: #9aa2ae; --ok: #5cc98d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 920px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: 2.3rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; font-weight: 600; }
+h3 { font-size: 1.15rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 14px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 0.85rem; color: var(--muted); }
+.facts span b { color: var(--fg); font-weight: 500; }
+section { display: grid; gap: 16px; }
+.lede { font-size: 1.05rem; }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 72ch; }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td a { text-decoration: none; }
+td a:hover, td a:focus-visible { text-decoration: underline; }
+
+.sev { display: inline-block; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; font-weight: 500; }
+.sev.crit { color: var(--sev-crit); }
+.sev.high { color: var(--sev-high); }
+.sev.med { color: var(--sev-med); }
+.sev.low { color: var(--sev-low); }
+.conf { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+
+.record { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--sev-low); border-radius: 4px; padding: 20px 22px; display: grid; gap: 14px; scroll-margin-top: 16px; }
+.record.crit { border-left-color: var(--sev-crit); }
+.record.high { border-left-color: var(--sev-high); }
+.record.med { border-left-color: var(--sev-med); }
+.rec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.rec-id { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.w5 { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 7px 14px; margin: 0; }
+.w5 dt { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.w5 dd { margin: 0; min-width: 0; }
+.extra { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.extra > div { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.extra h4 { margin: 0; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+pre { margin: 0; background: var(--code-bg); border-radius: 4px; padding: 10px 12px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.5; }
+pre code { background: none; padding: 0; font-size: inherit; }
+
+.bars { display: grid; gap: 8px; }
+.bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 64px; gap: 10px; align-items: center; font-size: 0.85rem; }
+.bar-row .lab { color: var(--muted); }
+.bar-track { height: 12px; background: var(--code-bg); border-radius: 2px; position: relative; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); }
+.bar-fill.bad { background: var(--sev-crit); }
+.bar-fill.warn { background: var(--sev-high); }
+.bar-row .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.floor-note { font-size: 0.8rem; color: var(--muted); }
+
+.held { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.held div { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; min-width: 0; }
+.held b { display: block; font-family: var(--font-display); font-weight: 600; font-size: 1rem; color: var(--ok); }
+.held p { font-size: 0.88rem; color: var(--muted); }
+
+footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 6px; }
+
+@media (max-width: 560px) {
+  h1 { font-size: 1.8rem; }
+  .w5 { grid-template-columns: 1fr; gap: 2px; }
+  .w5 dd { margin-bottom: 8px; }
+  .bar-row { grid-template-columns: 96px minmax(0, 1fr) 54px; }
+  .record { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Stress test · field report · 6 Oct 2026</div>
+  <h1>Where Virtual Matter Breaks</h1>
+  <p class="lede">I spent one long session building a full multiplayer survival game, Ashlight, on a live Virtual Matter world, then deliberately pushed the engine until it failed. This report gives the Who, What, When, Where and Why for each breakage, plus impact, a repro and a suggested fix. Every number comes from the live server or the connected client.</p>
+  <div class="facts">
+    <span>Framing <b class="mono">9b9ILBOjInycFrZ0KCFn1</b></span>
+    <span>Host <b class="mono">voxelhost012</b></span>
+    <span>Client <b>Native, Windows, iteration073</b></span>
+    <span>Tooling <b>virtualmatter CLI + MCP</b></span>
+    <span>Server idle baseline <b>59.5–59.8 fps</b></span>
+  </div>
+</header>
+
+<section>
+  <h2>Summary</h2>
+  <p>The engine degraded gracefully under most direct load: rays, RPCs, tiny edits and big memory. It broke in four ways. Each one either caps how big a shared world can get or loses data without telling anyone:</p>
+  <ul class="plain">
+    <li><b>Server-driven characters are expensive.</b> The SDK character controller costs about 0.3 ms per NPC per frame, so roughly 40 rigged NPCs take a 60 fps server down to 13 fps.</li>
+    <li><b>Object creation stalls the whole server.</b> Adding 200 voxel objects in one step froze the server for 1.7 s and dropped it to 9.7 fps.</li>
+    <li><b>Nothing has a ceiling.</b> Networked state, the Lua heap and client particles all accept unlimited input until a player feels it. Networked state took 256 MB and gave a 3.6 s ping; the Lua heap reached 3 GB; the particle flood hit 8,000 against a documented 500.</li>
+    <li><b>State can silently diverge or disappear.</b> Hot reload orphans async work, sync overwrote a newer local save, a client lost collision that the server still had, and <code>imagine()</code> jobs stall forever with no error.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Breakage index</h2>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>#</th><th>Severity</th><th>Breakage</th><th>Break point</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">B1</td><td><span class="sev crit">Critical</span></td><td><a href="#b1">Server NPC capacity</a></td><td class="num">40 NPCs → 13.2 fps</td></tr>
+        <tr><td class="mono">B2</td><td><span class="sev crit">Critical</span></td><td><a href="#b2">Dynamic object creation spike</a></td><td class="num">+200 in one step → 9.7 fps</td></tr>
+        <tr><td class="mono">B3</td><td><span class="sev crit">Critical</span></td><td><a href="#b3">Client loses static collision</a></td><td>Remove then Add in one region</td></tr>
+        <tr><td class="mono">B4</td><td><span class="sev crit">Critical</span></td><td><a href="#b4">Sync overwrites a newer local save</a></td><td>2 saves ~5 s apart</td></tr>
+        <tr><td class="mono">B5</td><td><span class="sev high">High</span></td><td><a href="#b5">Uncapped networked payload</a></td><td class="num">256 MB → 3.57 s ping</td></tr>
+        <tr><td class="mono">B6</td><td><span class="sev high">High</span></td><td><a href="#b6">Uncapped Lua heap</a></td><td class="num">3 GB, main thread blocked</td></tr>
+        <tr><td class="mono">B7</td><td><span class="sev high">High</span></td><td><a href="#b7"><code>imagine()</code> silent stalls</a></td><td>&gt;5 concurrent jobs</td></tr>
+        <tr><td class="mono">B8</td><td><span class="sev high">High</span></td><td><a href="#b8">Hot reload orphans live work</a></td><td class="num">Any .lua save; 0.39 fps</td></tr>
+        <tr><td class="mono">B9</td><td><span class="sev med">Medium</span></td><td><a href="#b9">Client particle cap not enforced</a></td><td class="num">8,000 → 12.7 fps</td></tr>
+        <tr><td class="mono">B10</td><td><span class="sev med">Medium</span></td><td><a href="#b10">Scene-wide LOD starvation</a></td><td class="num">~48 prioritizeLod objects</td></tr>
+        <tr><td class="mono">B11</td><td><span class="sev med">Medium</span></td><td><a href="#b11">Transforms that don't replicate</a></td><td>New child scale, plain pos</td></tr>
+        <tr><td class="mono">B12</td><td><span class="sev med">Medium</span></td><td><a href="#b12">Opaque persisted tables</a></td><td><code>Config</code>, <code>varsTable</code></td></tr>
+        <tr><td class="mono">B13</td><td><span class="sev med">Medium</span></td><td><a href="#b13">Edit guard estimates</a></td><td>Thin cylinders, same-frame sums</td></tr>
+        <tr><td class="mono">B14</td><td><span class="sev low">Low</span></td><td><a href="#b14">Editor Tools boot errors</a></td><td>Every boot</td></tr>
+        <tr><td class="mono">B15</td><td><span class="sev low">Low</span></td><td><a href="#b15">Docs vs runtime mismatches</a></td><td>4 confirmed</td></tr>
+        <tr><td class="mono">B16</td><td><span class="sev crit">Critical</span></td><td><a href="#b16">Moving voxel objects + raycasts spike the server</a></td><td class="num">100–245 ms frames</td></tr>
+        <tr><td class="mono">B17</td><td><span class="sev high">High</span></td><td><a href="#b17">Fixed per-object cost and thin headroom</a></td><td class="num">~21 µs/object, ~4 ms spare</td></tr>
+        <tr><td class="mono">B18</td><td><span class="sev med">Medium</span></td><td><a href="#b18">Clients can't instance assets</a></td><td>No client-side rig parts</td></tr>
+        <tr><td class="mono">B19</td><td><span class="sev crit">Critical</span></td><td><a href="#b19">Saving the terrain freezes the server</a></td><td class="num">&gt;60 s for 250 MB</td></tr>
+        <tr><td class="mono">B20</td><td><span class="sev high">High</span></td><td><a href="#b20">Terrain edits aren't persistent by default</a></td><td>Every gameplay edit</td></tr>
+        <tr><td class="mono">B21</td><td><span class="sev high">High</span></td><td><a href="#b21">Sync overwrite race, again</a></td><td>2 saves &lt;10 s apart</td></tr>
+        <tr><td class="mono">B22</td><td><span class="sev med">Medium</span></td><td><a href="#b22">Hidden browser tabs throttle the client</a></td><td class="num">6–12 fps</td></tr>
+        <tr><td class="mono">B23</td><td><span class="sev high">High</span></td><td><a href="#b23">Polled input drops fast taps</a></td><td>Press+release in one frame</td></tr>
+        <tr><td class="mono">B24</td><td><span class="sev med">Medium</span></td><td><a href="#b24">Generated audio reaches clients slowly</a></td><td class="num">7 of 14 after ~3 min</td></tr>
+        <tr><td class="mono">B25</td><td><span class="sev low">Low</span></td><td><a href="#b25">Platform popup covers the game's HUD</a></td><td>Browser clients</td></tr>
+        <tr><td class="mono">B26</td><td><span class="sev med">Medium</span></td><td><a href="#b26">Screenshot tool can't show final visuals</a></td><td>Low LOD, no custom lighting</td></tr>
+        <tr><td class="mono">B27</td><td><span class="sev high">High</span></td><td><a href="#b27"><code>Time.time</code> restarts on every Lua reload</a></td><td>Every hot reload</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="floor-note">Severity reflects player impact in a shared world. "Measured" means I isolated the cause with a benchmark or profiler. "Inferred" means the symptom is confirmed but the cause is my best reading from outside the engine.</p>
+</section>
+
+<section>
+  <h2>The 5Ws, per breakage</h2>
+
+  <article class="record crit" id="b1">
+    <div class="rec-head"><span class="rec-id">B1</span><h3>Server NPC capacity tops out near 40</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Every player on a world that runs server-side enemies or companions. It hits any maker who uses the SDK's <code>Examples/Character Controller.lua</code> for NPCs, as the skills docs recommend.</dd>
+      <dt>What</dt><dd>Server fps fell from 59.8 to 41.5 at 10 rigged NPCs, 30.4 at 20 and 13.2 at 40. Spawning 20 at once blocked the server for 8.2 s in a single frame. Spawned one at a time, the worst single spawn still took 675 ms.</dd>
+      <dt>When</dt><dd>Steady state, not just at spawn. Forty NPCs held 13.2 fps for as long as they lived.</dd>
+      <dt>Where</dt><dd><code>Character Controller:updateControls()</code> on the server: its capsule overlap via <code>Collision GetOverlap</code>. Spawn cost comes from creating about 11 streamed objects per segmented rig.</dd>
+      <dt>Why</dt><dd>A benchmark put one <code>updateControls</code> call at 299 µs. Forty NPCs call it every frame, which is 12 ms of a 16.7 ms budget before any AI runs. The profiler showed the NPC script at 28.6 ms per frame for 40 instances.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>A world can't hold the 30–60 server-driven enemies a survival or MMO-style game expects. I capped Ashlight at 24 and throttled distant NPCs to 5 Hz movement. That lifted 40 NPCs to 27.1 fps and 24 NPCs to 36.2 fps.</p></div>
+      <div><h4>Repro</h4><pre><code>-- spawn N CC characters, then:
+Scene:SetProfileScriptsUpdate(true)
+local t0 = AE:GetDebugTime()
+for i=1,50 do cc:updateControls(Vec3(0.1,0,0), false) end
+return (AE:GetDebugTime()-t0)*1e6/50  -- ≈299 µs</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Move the server capsule sweep into native code, or batch it across characters per frame. Add a built-in movement LOD so characters far from every client step at a lower rate. Document a per-NPC budget in the character-controller skill.</p></div>
+    </div>
+  </article>
+
+  <article class="record crit" id="b2">
+    <div class="rec-head"><span class="rec-id">B2</span><h3>Creating voxel objects stalls the whole server</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>All connected players during any burst of object creation: spawning waves, building, debris, rig assembly.</dd>
+      <dt>What</dt><dd>I added objects (one VoxelData plus a 0.3 m sphere each) in steps. Going from 200 to 400 in one step took 1,658 ms and dropped the server to 9.7 fps average and 0.2 fps minimum. Even the 100-object steps hit a 0.5 fps minimum. Afterwards, steady-state cost also grows with count: +300 objects ran at 54.8 fps and +1,000 at 36.9 fps.</dd>
+      <dt>When</dt><dd>At creation (the spike), then in proportion to live object count.</dd>
+      <dt>Where</dt><dd><code>Scene:CreateObject</code> + <code>AddComponent("VoxelData")</code> + the first <code>Vox:Add(...):Force(obj)</code>, plus per-object streaming to clients.</dd>
+      <dt>Why</dt><dd>Creation work appears to run synchronously on the main thread with no per-frame budget. The edit guard throttles voxel volume but not object count. The steady-state cost points to per-object streaming and transform bookkeeping.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Segmented characters multiply the problem: each Ashlight rig is about 11 objects, so 40 enemies means about 440 objects. Destruction that spawns physical rubble runs into the same wall.</p></div>
+      <div><h4>Repro</h4><pre><code>for i=1,200 do
+  local o = Scene:CreateObject("S"..i)
+  o.pos = Vec3(i%40, 2, i//40)
+  o:AddComponent("VoxelData").syncToClients = true
+  Vox:Add(Sphere(o.pos,0.3)):Force(o):Run()
+end  -- watch Time.fps for 4 s</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Queue object creation behind a per-frame budget, as the edit guard already does for voxel volume, or warn when one frame creates more than N objects. A lightweight "rig part" object type that shares one stream would make segmented characters affordable.</p></div>
+    </div>
+  </article>
+
+  <article class="record crit" id="b3">
+    <div class="rec-head"><span class="rec-id">B3</span><h3>A client loses collision the server still has</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>A connected player standing on terrain that the server rebuilds while they are there.</dd>
+      <dt>What</dt><dd>The player fell through a floor that existed on the server. The client's collision and raycasts missed static voxels that the server reported as present.</dd>
+      <dt>When</dt><dd>After a large async <code>Vox:Remove</code> (box quarters), followed within a few frames by <code>Vox:Add</code> in the same region. Building in fresh regions never triggered it.</dd>
+      <dt>Where</dt><dd>Client static voxel streaming and collision (<code>VVCollision</code>). The client-side character controller collides against client voxel data only.</dd>
+      <dt>Why</dt><dd>The remove and add deltas likely arrive or apply out of order, or the add is dropped while the remove is still streaming. None of <code>AE:ReloadGeometry()</code>, <code>AE:AEVV_InvalidateData()</code> or <code>Client:ReloadPage(false)</code> repaired it. <code>ReloadPage</code> did nothing at all in the native client.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Any destructible or rebuildable world, which is the platform's headline feature, can drop players into the void. I worked around it with settle waits after clears and a fall-catch that teleports players back.</p></div>
+      <div><h4>Repro</h4><pre><code>Vox:Remove(Box(c, Vec3(16,4,16))):ForceStatic():Run()
+util:schedule(0.05, function()
+  Vox:Add(Cylinder(c, c+Vec3(0,1,0), 7)):ForceStatic():Run()
+end)  -- stand a client on c</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Order or version static deltas per chunk so a client never applies an older remove over a newer add. Expose a working "resync region" call. Make <code>ReloadPage</code> work in the native client, or report an error when it can't.</p></div>
+    </div>
+  </article>
+
+  <article class="record crit" id="b4">
+    <div class="rec-head"><span class="rec-id">B4</span><h3>Sync overwrites a newer local save</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers and coding agents editing through <code>npx virtualmatter sync</code>.</dd>
+      <dt>What</dt><dd>I saved <code>Hollow.lua</code> twice, about 5 s apart. The log shows <i>pushed Hollow.lua</i> and then a run of <i>pulled Hollow.lua</i>. The second local edit was gone from disk, with no conflict file and no warning. Separately, a stopped background sync left its node child running; two syncs then produced <code>.remote-conflict</code> files and pulled a 157 MB <code>.am~</code> temp file into the mirror.</dd>
+      <dt>When</dt><dd>When a local save lands while the hot-reload echo of the previous push is still being pulled back.</dd>
+      <dt>Where</dt><dd>The CLI's two-way sync: the echo of its own push is treated as a remote change.</dd>
+      <dt>Why</dt><dd>The pull compares the remote copy against stale state instead of the content hash it just pushed, so its own echo overwrites a newer local file.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>This is silent loss of source code. An agent that saves a file twice in a row can believe a fix is live when it isn't. I only caught it because I grepped for the change.</p></div>
+      <div><h4>Repro</h4><pre><code>npx virtualmatter sync &amp;
+echo "-- a" &gt;&gt; X.lua; sleep 5
+echo "-- b" &gt;&gt; X.lua; sleep 20
+tail -2 X.lua   # "-- b" is missing</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Track the hash of each push and ignore the matching echo. Never let a pull overwrite a file whose local mtime is newer than the last push; write a conflict file instead. Kill child processes on exit and exclude <code>*.am~</code>.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b5">
+    <div class="rec-head"><span class="rec-id">B5</span><h3>Networked tables accept any payload size</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Every client of a world whose script writes large values into a <code>util:makeNetworkedTable</code> field.</dd>
+      <dt>What</dt><dd>A 16 MB string was written in 94 ms. 64 MB and 256 MB strings were also accepted and delivered. At 256 MB the client's ping rose to 3.57 s, freezing input and replication for every player. It recovered once I cleared the field.</dd>
+      <dt>When</dt><dd>On a single write. There is no warning at any size.</dd>
+      <dt>Where</dt><dd>Networked table delta replication, server to client.</dd>
+      <dt>Why</dt><dd>There is no size cap and no chunking: a large value blocks the reliable channel that carries everything else.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>One careless or hostile script, such as a chat log or inventory dump growing without bound, can lag every player in the session.</p></div>
+      <div><h4>Repro</h4><pre><code>self.net.blob = string.rep("x", 256*1024*1024)
+-- watch client ping</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Cap each field (for example 1 MB) and raise a Lua error above it. Send large values on a separate low-priority channel so they can't starve input and transform traffic.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b6">
+    <div class="rec-head"><span class="rec-id">B6</span><h3>The server Lua heap has no ceiling</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Whole sessions. A runaway script can starve the host process that every player shares.</dd>
+      <dt>What</dt><dd>The Lua heap grew to 3,072 MB with no limit, taking the process to 21.7 GB. A <code>run-lua</code> call that blocked the main thread ran past the 60 s CLI timeout. After freeing, Lua dropped to 9 MB, but the process stayed roughly 0.3 GB above its earlier footprint. Over the whole session, server memory rose from 6.1 GB to about 19 GB.</dd>
+      <dt>When</dt><dd>When a script allocates without bound, or a long synchronous loop runs inside <code>run-lua</code>.</dd>
+      <dt>Where</dt><dd>The server Lua VM allocator, and the <code>run-lua</code> bridge, which runs on the main thread.</dd>
+      <dt>Why</dt><dd>There is no allocator limit or instruction-count hook in the sandbox. The allocator keeps freed pages, which is normal, but nothing tells a maker how close the host is to its limit.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>A single infinite-append bug can take the world down for everyone, and an agent's long query freezes the simulation while it runs.</p></div>
+      <div><h4>Repro</h4><pre><code>local t = {}
+while collectgarbage("count")/1024 &lt; 3072 do
+  t[#t+1] = string.rep("A", 1024*1024)
+end</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Set a per-world Lua memory limit through <code>lua_setallocf</code> that raises a catchable error. Add an instruction-count hook so <code>run-lua</code> fails cleanly instead of hanging the main thread.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b7">
+    <div class="rec-head"><span class="rec-id">B7</span><h3><code>imagine()</code> jobs stall forever, silently</h3><span class="sev high">High</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers and agents generating assets.</dd>
+      <dt>What</dt><dd>Of 11 concurrent jobs, 5 finished quickly and 6 sat at 0% for over 20 minutes. Some prompts never progressed at all ("shadow creature … horror", "iron staff with hook"); reworded, they finished in about 75 s. No job ever fired an error, timeout or failure callback.</dd>
+      <dt>When</dt><dd>With more than 5 concurrent jobs, or with certain prompt content.</dd>
+      <dt>Where</dt><dd>The <code>imagine()</code> job queue and its generation backend.</dd>
+      <dt>Why</dt><dd>Probably a concurrency limit of 5 that drops or parks overflow jobs instead of queueing them. The prompt stalls look like a content filter rejecting the job without reporting back.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>A preview blockout sits in the world indefinitely. Agents can't tell "slow" from "dead", so they wait or retry and burn credits.</p></div>
+      <div><h4>Repro</h4><pre><code>for i=1,11 do
+  imagine("a wooden barrel "..i, Scene:CreateObject("I"..i), {})
+end  -- 6 never progress</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Queue extra jobs visibly with a status field, add a failure callback and a timeout, and return the reason when a prompt is rejected.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b8">
+    <div class="rec-head"><span class="rec-id">B8</span><h3>Hot reload orphans everything in flight</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Players in a world that is edited live, plus makers running long builds.</dd>
+      <dt>What</dt><dd>Saving any <code>.lua</code> file re-runs every script, and anything async is lost: Vox job queues, <code>util:schedule</code> chains and <code>imagine()</code> callbacks. With 40 NPCs alive, one save dropped the server to 0.39 fps for several seconds, and every NPC instance was orphaned.</dd>
+      <dt>When</dt><dd>On every save while sync is running, including saves to scripts unrelated to the running work.</dd>
+      <dt>Where</dt><dd>The hot reload path: a full Lua reset and re-instantiation of all scripts.</dd>
+      <dt>Why</dt><dd>Reload is global rather than per module, and callbacks keep references to the old instances.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Live-ops edits hitch every player and can break game state. I had to make the terrain builder resumable through <code>Config</code> and avoid saving during builds.</p></div>
+      <div><h4>Repro</h4><pre><code>util:schedule(30, function() print("fired") end)
+-- now save any .lua file
+-- "fired" never prints</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Reload only the changed module, and remap or cancel orphaned callbacks with a warning. Provide a hook such as <code>OnBeforeReload</code> so scripts can hand off state.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b9">
+    <div class="rec-head"><span class="rec-id">B9</span><h3>The documented particle cap isn't enforced</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Players on lower-end clients during heavy effects.</dd>
+      <dt>What</dt><dd>The docs say "max 500 particles". The client accepted 500, 2,000 and 8,000 in a single call. Client fps went from about 34–43 to 29.2 at 500, 26.2 at 2,000 (minimum 15.7) and 12.7 at 8,000 (minimum 5.4).</dd>
+      <dt>When</dt><dd>Immediately, on the client that spawns them.</dd>
+      <dt>Where</dt><dd><code>Editor Tools/Particles.lua</code> <code>addParticle</code> on the client.</dd>
+      <dt>Why</dt><dd>No cap or eviction exists, and the per-particle simulation runs in Lua.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Effects-heavy moments, such as explosions or a crowd of fire, drop clients into slideshow territory.</p></div>
+      <div><h4>Repro</h4><pre><code>local ps = Scene:GetObjectByName("Particles"):FindScript("Particles")
+for i=1,8000 do ps:addParticle(p, {lifetime={5,6}}) end</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Enforce the cap by evicting the oldest particles, and make it configurable. Long term, simulate particles natively or on the GPU.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b10">
+    <div class="rec-head"><span class="rec-id">B10</span><h3>Scene-wide LOD starvation</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Every client in a scene with many prioritized dynamic objects.</dd>
+      <dt>What</dt><dd>About 48 objects with <code>prioritizeLod = true</code> (lodBias 5) collapsed the whole scene's LOD on the client into giant blocks, including the hub fire 7 m from the camera. Removing them restored detail. lodBias 3 per character, without the prioritize flag, was fine.</dd>
+      <dt>When</dt><dd>When the combined prioritized budget exceeds the client's stream budget.</dd>
+      <dt>Where</dt><dd>The client LOD and streaming budget allocator.</dd>
+      <dt>Why</dt><dd>The prioritized objects take the shared budget before the rest of the scene gets any.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Making characters look sharp silently ruins everything else on screen.</p></div>
+      <div><h4>Repro</h4><pre><code>for each of 48 rig parts:
+  vd.prioritizeLod = true; vd.lodBias = 5</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Cap the share of the budget that prioritized objects can claim, and keep a floor for static terrain near the camera.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b11">
+    <div class="rec-head"><span class="rec-id">B11</span><h3>Transforms that don't replicate</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers building attached gear, props or rigs.</dd>
+      <dt>What</dt><dd>A child object created on the server with scale 0.089 showed up on clients at scale 1.0, producing a mace 11 times too big. Plain objects without a character controller showed up on clients at (0,0,0).</dd>
+      <dt>When</dt><dd>On creation, and on every later change.</dd>
+      <dt>Where</dt><dd>Object transform replication.</dd>
+      <dt>Why</dt><dd>Only character controllers replicate their position, through RPCs, and scale is never sent. The docs mention position, but the scale case catches people out.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Every maker ends up building their own transform sync.</p></div>
+      <div><h4>Repro</h4><pre><code>local c = Scene:CreateObject("G"); c.parent = root
+c.scale = 0.089   -- client reads 1.0</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Add an opt-in <code>replicateTransform</code> flag that covers position, rotation and scale, or at least send initial values at spawn.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b12">
+    <div class="rec-head"><span class="rec-id">B12</span><h3>Persisted tables come back opaque</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone persisting game state.</dd>
+      <dt>What</dt><dd><code>Config:TempSet(key, table)</code> comes back as an opaque <code>sol.LuaTable</code> userdata that can't be indexed or iterated. <code>component.varsTable</code> can't be iterated with <code>pairs</code>, and <code>vt.field</code> returns nil for values set with <code>setSerializeVar</code>.</dd>
+      <dt>When</dt><dd>On read-back after a Lua reset.</dd>
+      <dt>Where</dt><dd>The Config store and the VarTable bindings.</dd>
+      <dt>Why</dt><dd>The bindings return the raw sol object rather than converting it back to a Lua table.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Silent data loss for anyone who doesn't test a round trip. I serialized everything into Lua-literal strings instead.</p></div>
+      <div><h4>Repro</h4><pre><code>Config:TempSet("k", {a=1})
+local t = Config:TempGet("k")
+return type(t), t.a  -- userdata, error</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Deep-convert values on get, or reject tables on set with a clear error.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b13">
+    <div class="rec-head"><span class="rec-id">B13</span><h3>Edit guard estimates are hard to predict</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers and agents building terrain or structures.</dd>
+      <dt>What</dt><dd>A thin cylinder (r 17, h 0.55) was estimated at about 3,195 baseline-m² and rejected, while a sphere of r 6.5 was accepted. A sphere of r 10 was rejected because about 505 m² had already been issued that frame. Single spheres passed up to r 8–11, were soft-rejected at r 12–17 and hard-refused at r 24 and above.</dd>
+      <dt>When</dt><dd>On <code>Run()</code>.</dd>
+      <dt>Where</dt><dd>The Vox edit guard.</dd>
+      <dt>Why</dt><dd>Cylinder cost is estimated well above the documented formula, and the guard sums all ops in a frame. The sum is sensible, but the documentation doesn't say so.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Trial and error for anything larger than a room. The rejection message itself is good and actionable.</p></div>
+      <div><h4>Repro</h4><pre><code>Vox:Add(Cylinder(c, c+Vec3(0,0.55,0), 17))
+  :ForceStatic():Run()  -- rejected</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Expose <code>Vox:EstimateCost(op)</code>, and document the per-shape cost and the same-frame aggregation.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b14">
+    <div class="rec-head"><span class="rec-id">B14</span><h3>Editor Tools fail at boot</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Every world on this build.</dd>
+      <dt>What</dt><dd>Five errors on every boot: <code>Editor.lua:63</code> events read-only (memoryPressure), <code>Transform Gizmo.lua:260</code> onSnapChanged nil, <code>Shape Manager.lua:220</code> onPermissionChanged nil, <code>Editor.lua:785</code> onSnapChangedTrigger nil, <code>Events.lua:742</code> triggerLocally nil.</dd>
+      <dt>When</dt><dd>On every Lua reset.</dd>
+      <dt>Where</dt><dd>The Editor Tools scripts against the engine's events module.</dd>
+      <dt>Why</dt><dd>Version skew between the Editor Tools scripts and the engine. One knock-on effect: the Shape Manager path that resumes <code>imagine()</code> jobs is broken.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Noise in the error channel that agents must filter, and a broken job-resume path.</p></div>
+      <div><h4>Repro</h4><pre><code>Server:LuaReset()  -- then read errors</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Ship Editor Tools versioned to the engine, and add a CI boot test with zero errors.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b15">
+    <div class="rec-head"><span class="rec-id">B15</span><h3>Docs and runtime disagree</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Agents and makers who follow the skills docs.</dd>
+      <dt>What</dt><dd><code>Scene:CreateMaterial</code> is documented and used by a skill, but nil at runtime. <code>Button.onPress</code> expects an event-name string; the function form is <code>onPressEx</code>. Generated models face −Z, while the skill says +Z. The particle cap of 500 is documented but not enforced (B9).</dd>
+      <dt>When</dt><dd>On first use.</dd>
+      <dt>Where</dt><dd><code>apiEmmyAtomontage.lua</code> and the <code>Skills/</code> references.</dd>
+      <dt>Why</dt><dd>The API dump and the runtime build have drifted apart.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Wasted turns, plus rigs and characters that face backwards.</p></div>
+      <div><h4>Repro</h4><pre><code>return Scene.CreateMaterial  -- nil</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Generate the API dump from the running build, and add doc tests that call every documented symbol.</p></div>
+    </div>
+  </article>
+  <article class="record crit" id="b16">
+    <div class="rec-head"><span class="rec-id">B16</span><h3>Moving voxel objects plus raycasts spike the server</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Every player in a world with server-driven moving characters that also use server raycasts, which describes almost any game with AI.</dd>
+      <dt>What</dt><dd>With 24 rigged enemies (6 voxel objects each) moving on the server, 15–27 frames in every 8 s took 50–245 ms, and average fps fell to 40. The game was otherwise identical. Moving the objects without raycasts: 54.9 fps, no spikes. Raycasts without moving: 54.4 fps, no spikes. Both together: the spikes return.</dd>
+      <dt>When</dt><dd>When objects are moved through <code>obj.pos</code> at 1–15 Hz while scripts run about 240 static rays per second. The rays use <code>ForceStatic</code>, so they shouldn't touch dynamic objects at all.</dd>
+      <dt>Where</dt><dd>Spike frames show <code>NEW/VPO Update Part 7</code> (80–128 ms), <code>NEW/FixedUpdate VPuzzleObject</code> and <code>NEW/_AmStreaming - Sending</code> (54–74 ms).</dd>
+      <dt>Why</dt><dd>Probably a deferred rebuild of the dynamic-object spatial or streaming structures, triggered when a query follows transform changes. An individual ray is only 0.03–1 ms, so the cost lands later in the frame.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>This was the single biggest cause of stutter in the game. The workaround is unusual: keep each enemy's real position in Lua, replicate it through a networked field, and move the engine object only every 10 s or 8 m.</p></div>
+      <div><h4>Repro</h4><pre><code>-- 24 roots with 5 child VoxelData each
+-- every frame: root.pos += v*dt
+-- 10 Hz each: Cast:Ray(p, down):ForceStatic():Run()
+-- watch SUF/Update Frame for 8 s</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Make static-only queries skip dynamic-structure updates. Batch transform-driven rebuilds per frame with a time budget, and expose a "client-driven, server-static" flag for objects whose clients position them anyway (<code>receiveTransform = false</code>).</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b17">
+    <div class="rec-head"><span class="rec-id">B17</span><h3>Fixed per-object cost and very little headroom</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Any world with animated characters built from several voxel parts.</dd>
+      <dt>What</dt><dd>Each active dynamic VoxelData costs about 21 µs per server frame, even when it doesn't move: 260 rig parts cost 5.4 ms. Inactive objects are effectively free, and switching off 22 hidden template roots saved about 1 ms. <code>editable = false</code> changes nothing. An idle edit session already uses 11.4–12 ms of update time: editor tools Lua is about 1.8 ms (the undo History script alone 0.9 ms), and the server's own screenshot camera adds about 2.6 ms of render and blit. That leaves roughly 4 ms for the game at 60 fps.</dd>
+      <dt>When</dt><dd>Constantly.</dd>
+      <dt>Where</dt><dd><code>Update VPuzzleObject</code> and the edit session's Editor Tools.</dd>
+      <dt>Why</dt><dd>Per-object bookkeeping runs every frame regardless of state, and editor and screenshot work run even when nobody is using them.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>I cut each enemy from 11 to 5 voxel objects (a lighter rig with virtual elbow and knee joints) to reach 53–56 fps with 24 enemies, up from 13 fps at the start. A solid 60 fps with 24 enemies grouped around one player isn't reachable on this host, because the idle engine overhead alone is about 12 ms.</p></div>
+      <div><h4>Repro</h4><pre><code>-- 260 parked VoxelData objects:
+-- SUF/Update Frame goes from 14.7 ms to 20.1 ms</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Skip unchanged objects in the per-frame update. Render the server's screenshot camera only on request. Profile and trim Editor Tools, or turn them off in play sessions.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b18">
+    <div class="rec-head"><span class="rec-id">B18</span><h3>Clients can't instance voxel assets</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers who want animated characters without paying B17 on the server.</dd>
+      <dt>What</dt><dd>On the client, <code>AE:GetAssets()</code> returns none of the world's rig assets: 0 of the 150 the server lists. The client <code>VoxelData.data</code> is nil, and a template's <code>.asset</code> reads nil. A client can't create local copies of character parts, so every animated limb has to be a server object.</dd>
+      <dt>When</dt><dd>Always.</dd>
+      <dt>Where</dt><dd>Client asset sync and VoxelData bindings.</dd>
+      <dt>Why</dt><dd>Voxel content is streamed per server object instead of shipped as shared assets.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>It blocks the obvious fix for B17: server keeps one root per character, and each client instances the limbs locally.</p></div>
+      <div><h4>Repro</h4><pre><code>-- on a client
+local t = Scene:GetObjectByName("Rig Hollow torso")
+return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
+      <div><h4>Suggested fix</h4><p>Allow client-local VoxelData to reference a server-streamed object's content, or sync asset references so clients can instance them.</p></div>
+    </div>
+  </article>
+
+  <article class="record crit" id="b19">
+    <div class="rec-head"><span class="rec-id">B19</span><h3>Saving the terrain freezes the server for over a minute</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Everyone connected when a world saves its terrain.</dd>
+      <dt>What</dt><dd><code>VoxelData:Save()</code> on the static terrain (a 160 m map at 32 vpm, a 250 MB <code>.am</code>) blocked the main thread past the CLI's 60 s timeout. The CLI returned HTTP 504 and the world was frozen until the save finished. Sync then pulled a 100–120 MB <code>.am~</code> temp file into the local mirror.</dd>
+      <dt>When</dt><dd>On every save of the static terrain. <code>Server:SaveScene()</code> also re-saves it.</dd>
+      <dt>Where</dt><dd>Static voxel serialization, which is synchronous and saves the whole file every time.</dd>
+      <dt>Why</dt><dd>The save is a single blocking write of the entire common collection, with no async, incremental or per-chunk dirty path.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>A persistent survival world can't save its terrain while anyone plays. Most terrain changes are only safe once the server is empty.</p></div>
+      <div><h4>Mitigation shipped</h4><p>A Terrain Keeper module saves the full terrain only after the server has been empty for 45 s, at most every 10 minutes. Between saves, every gameplay edit is written to a compact journal that survives reloads and restarts, and is replayed onto the reverted terrain after a restart. The first automatic save ran while the server was empty.</p></div>
+      <div><h4>Suggested fix</h4><p>Save only dirty chunks, asynchronously on a worker thread with a copy-on-write snapshot. Expose an edit log the engine replays itself.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b20">
+    <div class="rec-head"><span class="rec-id">B20</span><h3>Gameplay terrain edits aren't persistent by default</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Players who dig, salvage, build or destroy, which in a voxel game is everyone.</dd>
+      <dt>What</dt><dd>After hours of play the static terrain reported <code>isSaved = false</code>. Only the scene hierarchy had been saved every 2 minutes, which excludes voxels. A restart would revert salvaged walls, burned blight, broken ruins and dug holes. Systems that rebuild from saved game state (homes, blight, arena) would then re-add geometry on top of the reverted terrain. Players see walls that pop back up, and growth that stacks.</dd>
+      <dt>When</dt><dd>On any server restart.</dd>
+      <dt>Where</dt><dd>The split between <code>SaveSceneHierarchy</code> (cheap, no voxels) and voxel saves (B19).</dd>
+      <dt>Why</dt><dd>The cheap save path is the documented default. The voxel save path is too expensive to run while anyone is playing.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>"Persistent world" is the game's promise, and the engine's cheap save path quietly breaks it.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Terrain Keeper journal (see B19). Harvesting, digging, blight burning and lean-to shelters all go through it. Rebuild-from-state systems use exact saved positions, so replaying them is idempotent.</p></div>
+      <div><h4>Suggested fix</h4><p>Include voxel deltas in the hierarchy save (journal or dirty-chunk diffs), or warn makers when a world has gone more than N minutes with unsaved static edits.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b21">
+    <div class="rec-head"><span class="rec-id">B21</span><h3>The sync overwrite race happened again</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone editing through <code>npx virtualmatter sync</code>, especially coding agents that save quickly.</dd>
+      <dt>What</dt><dd>Two quick edits to <code>Terrain Keeper.lua</code>: the second was partly lost when sync pulled the echo of the first back over it. One fix was missing from disk with no conflict file. Same mechanism as B4.</dd>
+      <dt>When</dt><dd>When two saves to one file land within about 10 s.</dd>
+      <dt>Where</dt><dd>CLI two-way sync.</dd>
+      <dt>Why</dt><dd>See B4: the pull treats the echo of its own push as a remote change.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Silent source loss mid-session, again.</p></div>
+      <div><h4>Mitigation shipped</h4><p>All edits are staged outside the mirror and copied in one write per file. I wait 25–30 s, then compare every file against its staged copy before testing. Parallel agents write only to staging folders, and one deployer copies.</p></div>
+      <div><h4>Suggested fix</h4><p>As in B4: track pushed hashes and never let a pull overwrite a newer local file.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b22">
+    <div class="rec-head"><span class="rec-id">B22</span><h3>Hidden browser tabs throttle the client</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Players with the game in a background browser tab, and anyone measuring client performance.</dd>
+      <dt>What</dt><dd>The connected WASM client measured 6–12 fps even with no enemies, against 34–43 earlier. The client stays connected while throttled, so its player keeps existing in the world.</dd>
+      <dt>When</dt><dd>When the tab or window is hidden.</dd>
+      <dt>Where</dt><dd>Browser timer and rAF throttling of the WASM client.</dd>
+      <dt>Why</dt><dd>Normal browser behaviour, but the server can't tell an AFK, throttled client from an active one.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Client-side numbers are only reliable from a focused window, and AFK players still pull enemies.</p></div>
+      <div><h4>Mitigation</h4><p>Client performance tuning is based on code-path costs rather than that client's fps.</p></div>
+      <div><h4>Suggested fix</h4><p>Report a client "visible / throttled" flag to the server (<code>Client:IsAppVisible</code> exists client-side) so games can treat AFK players differently.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b23">
+    <div class="rec-head"><span class="rec-id">B23</span><h3>Polled input drops fast taps</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Players on slow or throttled clients, and anyone using automation or accessibility tools that send quick taps.</dd>
+      <dt>What</dt><dd>The engine's <code>events.keyDown</code> listener received "F", but <code>Input:KeyDown("F")</code>, which the SDK's controllers poll, never returned true. The lantern didn't light.</dd>
+      <dt>When</dt><dd>When a key goes down and up within the same rendered frame. That is common at the 6–12 fps of a throttled browser client (B22).</dd>
+      <dt>Where</dt><dd>The <code>Input</code> polling API, which samples state per frame instead of edges.</dd>
+      <dt>Why</dt><dd>Press and release edges inside one frame cancel out before the poll.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Players on weak devices lose actions: dodges, flasks, interactions.</p></div>
+      <div><h4>Mitigation shipped</h4><p>The player script queues <code>events.keyDown</code> events and consumes them once per frame. A <code>pressed(k)</code> helper returns the poll OR the queued edge. Verified live: the lantern lit, and the tutorial advanced.</p></div>
+      <div><h4>Suggested fix</h4><p>Latch press edges in <code>Input:KeyDown</code> until the next Lua update, and document the event API as the default.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b24">
+    <div class="rec-head"><span class="rec-id">B24</span><h3>Generated audio reaches clients slowly</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Players connected while new sounds or music are added.</dd>
+      <dt>What</dt><dd>Fal generated 14 of 14 clips without a failure: 11 sound effects of 20–240 KB, and 3 music tracks of 3.4–4.7 MB. A browser client that connected afterwards listed none of them at first, then 7 of 14 about 3 minutes later.</dd>
+      <dt>When</dt><dd>After a montage audio asset is created.</dd>
+      <dt>Where</dt><dd>Asset sync to clients (<code>events.assetSyncedIn</code>).</dd>
+      <dt>Why</dt><dd>Inferred: assets are streamed in the background at a modest rate, and big MP3s queue behind each other.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>New players hear placeholder or no sounds for minutes.</p></div>
+      <div><h4>Mitigation shipped</h4><p>The audio module re-indexes on every <code>assetSyncedIn</code> event and falls back to similar built-in SDK sounds until the custom ones arrive.</p></div>
+      <div><h4>Suggested fix</h4><p>Prioritise small assets, expose sync progress, and allow preloading a declared asset list at connect.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b25">
+    <div class="rec-head"><span class="rec-id">B25</span><h3>The platform's popup covers the game's HUD</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Browser players.</dd>
+      <dt>What</dt><dd>The website-drawn "Running slow in this browser?" card (about 200×120 px at 1280×720, bottom-left) sits on top of the game's vitals panel until dismissed. Games can't see it or move it.</dd>
+      <dt>When</dt><dd>Shortly after joining in a browser.</dd>
+      <dt>Where</dt><dd>The make.virtualmatter.ai page chrome around the engine iframe.</dd>
+      <dt>Why</dt><dd>The page and the game don't share layout information.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Health and oil are hidden at the moment a new player most needs them.</p></div>
+      <div><h4>Mitigation</h4><p>A tunable lift for the vitals panel (<code>AshUI.VITALS_LIFT</code>) exists; the default keeps the layout clean.</p></div>
+      <div><h4>Suggested fix</h4><p>Place platform toasts in a reserved corner, or give games a safe-area query.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b26">
+    <div class="rec-head"><span class="rec-id">B26</span><h3>The screenshot tool can't show final visuals</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers and coding agents verifying graphics and animation.</dd>
+      <dt>What</dt><dd><code>virtualmatter screenshot</code> renders with the server's headless client. It skips the game's custom light pass, streams rigs at very low LOD, and poses characters at whatever rate the game allows there. <code>--target</code> refuses objects without their own voxels, such as rig roots. The browser editor link renders correctly, but it stalls whenever its tab or pane is hidden (B22), and its canvas lives in an iframe that page-level automation can't send held keys to.</dd>
+      <dt>When</dt><dd>Every visual check.</dd>
+      <dt>Where</dt><dd>The CLI/MCP screenshot path and the browser client.</dd>
+      <dt>Why</dt><dd>Inferred: screenshots come from a cheap server-side scene rather than a real client.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Animation, lighting and UI can only be judged in a visible real client, so verification takes longer and some results are marked unverified.</p></div>
+      <div><h4>Mitigation</h4><p>Geometry is checked with CLI screenshots. UI and lighting are checked in a visible browser client, with player actions driven through client-side Lua and RPCs.</p></div>
+      <div><h4>Suggested fix</h4><p>Allow screenshots from a chosen connected client (<code>--client &lt;id&gt;</code>), keep the custom shader passes, and accept <code>--target</code> on hierarchy roots.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b27">
+    <div class="rec-head"><span class="rec-id">B27</span><h3><code>Time.time</code> restarts on every Lua reload</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Any script that stores a timestamp somewhere that outlives the Lua state: <code>Config</code>, serialized fields or a ledger.</dd>
+      <dt>What</dt><dd>After hours of uptime, <code>Time.time</code> read 92 s, while <code>AE:GetDebugTime()</code> read 59 661 s. The Terrain Keeper stored its last-save time in <code>Config</code>. After a hot reload that time lay in the future ("last full save −64 s ago"), which would have blocked the next save for as long as the world had been running.</dd>
+      <dt>When</dt><dd>On every hot reload, Lua reset or restart.</dd>
+      <dt>Where</dt><dd>The simulation clock restarts with the Lua state.</dd>
+      <dt>Why</dt><dd>The clock is tied to the Lua state, not to the process. That's reasonable, but it isn't documented, and the SDK guide recommends <code>Time.time</code> for timing.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Cooldowns, respawn timers and regrowth timers that persist across reloads silently stretch or never fire.</p></div>
+      <div><h4>Mitigation shipped</h4><p>The Terrain Keeper uses <code>AE:GetDebugTime()</code> (wall clock). The other game timers were audited: they live only in memory, or persist as "seconds left" rather than absolute times.</p></div>
+      <div><h4>Suggested fix</h4><p>Document the reset, and offer a monotonic per-process clock (for example <code>Time.uptime</code>) for anything that persists.</p></div>
+    </div>
+  </article>
+</section>
+
+<section>
+  <h2>Optimization result</h2>
+  <p>Server fps with 24 enemies all chasing one player (5 s windows; idle baseline 59.5).</p>
+  <div class="bars" role="list" aria-label="Server fps through the optimization">
+    <div class="bar-row" role="listitem"><span class="lab">SDK controller</span><div class="bar-track"><div class="bar-fill bad" style="width:63%"></div></div><span class="v">38.2</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">Ray mover</span><div class="bar-track"><div class="bar-fill warn" style="width:66%"></div></div><span class="v">39.5</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">+ 5-part rig</span><div class="bar-track"><div class="bar-fill warn" style="width:68%"></div></div><span class="v">40.6</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">+ engine decoupled</span><div class="bar-track"><div class="bar-fill" style="width:88%"></div></div><span class="v">53.0</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">+ lean roots</span><div class="bar-track"><div class="bar-fill" style="width:91%"></div></div><span class="v">54.7</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">Boss fight, 24</span><div class="bar-track"><div class="bar-fill" style="width:89%"></div></div><span class="v">53.3</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Mitigation log</h2>
+  <p>What the game does today about each breakage, updated with every release.</p>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>#</th><th>Mitigation in Ashlight</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">B1/B16/B17</td><td>A ray-probed enemy mover with positions held in Lua, engine objects re-centred every 10 s, a 5-part enemy rig, hidden templates switched off, AI at 5 Hz near players and 2 Hz away, and a cap of 24 enemies</td><td>Shipped: 53–56 fps worst case</td></tr>
+        <tr><td class="mono">B2</td><td>Enemies spawned one per 0.3–0.4 s; boss bodies built across frames</td><td>Shipped</td></tr>
+        <tr><td class="mono">B3</td><td>Settle waits after terrain clears, and a fall-catch that teleports players back</td><td>Shipped (workaround)</td></tr>
+        <tr><td class="mono">B4/B21</td><td>Staging folders, single-write copies, compare-after-sync, one deployer</td><td>Process</td></tr>
+        <tr><td class="mono">B7</td><td>Generation jobs queued at most 4 at a time, with failure tracking. 11 of 11 sound effects generated fine</td><td>Shipped</td></tr>
+        <tr><td class="mono">B8</td><td>Builders that resume, idempotent rebuilds, and no Lua saves while generation callbacks are pending</td><td>Process</td></tr>
+        <tr><td class="mono">B12</td><td>Game state serialized as Lua-literal strings in a ledger; the terrain journal kept as its own string</td><td>Shipped</td></tr>
+        <tr><td class="mono">B19/B20</td><td>Terrain Keeper: full save only when the server is empty, plus a replayed edit journal</td><td>Shipped</td></tr>
+        <tr><td class="mono">B9</td><td>Particle budgets per effect; no particles in the server's headless client</td><td>Shipped</td></tr>
+        <tr><td class="mono">B23</td><td>Event-queued key input in the player script</td><td>Shipped, verified live</td></tr>
+        <tr><td class="mono">B24</td><td>Audio module re-indexes on asset sync and falls back to built-in sounds</td><td>Shipped</td></tr>
+        <tr><td class="mono">B26</td><td>Server rigs pose at 4 Hz in the headless client; visual checks done in a visible browser client</td><td>Process</td></tr>
+        <tr><td class="mono">B27</td><td>Persisted timers use wall-clock time</td><td>Shipped</td></tr>
+        <tr><td class="mono">B19 (follow-up)</td><td>The Keeper's automatic empty-server save fired twice on its own: the journal was cleared and the terrain marked saved</td><td>Verified live</td></tr>
+        <tr><td class="mono">"Odd walls"</td><td>The 12 bare ruin shells were rebuilt as dressed ruined buildings (2 168 ops, 0 errors). The hub wall became a scavenged palisade, ash patches became flat paint, the sphere berm became a continuous boundary, and test structures were removed through the journal</td><td>Shipped; edge being made more natural</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Measured limits</h2>
+  <p>Server fps over a 4–5 s window after each step. Bars are scaled to 60 fps; anything under 30 fps counts as broken for a shared world.</p>
+  <div class="bars" role="list" aria-label="Server fps by load">
+    <div class="bar-row" role="listitem"><span class="lab">Idle baseline</span><div class="bar-track"><div class="bar-fill" style="width:99%"></div></div><span class="v">59.5</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">+300 objects</span><div class="bar-track"><div class="bar-fill" style="width:91%"></div></div><span class="v">54.8</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">+1,000 objects</span><div class="bar-track"><div class="bar-fill" style="width:62%"></div></div><span class="v">36.9</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">+200 in 1 step</span><div class="bar-track"><div class="bar-fill bad" style="width:16%"></div></div><span class="v">9.7</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">10 NPCs</span><div class="bar-track"><div class="bar-fill" style="width:69%"></div></div><span class="v">41.5</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">20 NPCs</span><div class="bar-track"><div class="bar-fill warn" style="width:51%"></div></div><span class="v">30.4</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">40 NPCs</span><div class="bar-track"><div class="bar-fill bad" style="width:22%"></div></div><span class="v">13.2</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">40 NPCs, game LOD</span><div class="bar-track"><div class="bar-fill warn" style="width:45%"></div></div><span class="v">27.1</span></div>
+    <div class="bar-row" role="listitem"><span class="lab">24 NPCs, game LOD</span><div class="bar-track"><div class="bar-fill" style="width:60%"></div></div><span class="v">36.2</span></div>
+  </div>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Probe</th><th>Load</th><th>Result</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>Server raycast</td><td class="num">1k / 10k / 50k rays</td><td class="num">≈24 µs per ray; 50k = 1.2 s stall</td><td>Held</td></tr>
+        <tr><td>RPC flood</td><td class="num">50k, then 500k</td><td class="num">50k queued in 72 ms; no visible impact</td><td>Held, but no backpressure</td></tr>
+        <tr><td>Tiny static edits</td><td class="num">5,000 in 1 frame</td><td class="num">All accepted, 240 ms</td><td>Held</td></tr>
+        <tr><td>Big edits</td><td class="num">Sphere r 4→28</td><td class="num">Soft reject r 12–17, hard refusal r ≥24</td><td>Held, guard worked</td></tr>
+        <tr><td>Character controller</td><td class="num">1 call</td><td class="num">≈299 µs on the server</td><td>Broke at scale (B1)</td></tr>
+        <tr><td>Networked write</td><td class="num">Changed vs same value</td><td class="num">10.1 µs vs 0.1 µs</td><td>Fine; write only on change</td></tr>
+        <tr><td>Networked payload</td><td class="num">16 / 64 / 256 MB</td><td class="num">All accepted; 3.57 s ping</td><td>Broke (B5)</td></tr>
+        <tr><td>Lua heap</td><td class="num">256 MB → 3 GB</td><td class="num">No cap; process 21.7 GB</td><td>Broke (B6)</td></tr>
+        <tr><td>Client particles</td><td class="num">500 / 2k / 8k</td><td class="num">29.2 / 26.2 / 12.7 fps</td><td>Broke (B9)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>What held up</h2>
+  <div class="held">
+    <div><b>Recovery</b><p>Every test recovered fully after cleanup. Server fps went back to 59.5–59.8, and nothing crashed the host.</p></div>
+    <div><b>Edit guard</b><p>Oversized voxel edits were refused before they could stall the frame, with an actionable message.</p></div>
+    <div><b>Raycasts and RPCs</b><p>Fast and steady at volumes far beyond what gameplay needs.</p></div>
+    <div><b>Custom rendering</b><p>A full-screen light pass rewritten in <code>ssao2.fs</code> hot-reloaded live and carried game state through the fog uniforms.</p></div>
+    <div><b>Persistence</b><p>Player homes, fuel levels and quest state survived Lua reloads through a ledger serialized as Lua-literal strings.</p></div>
+    <div><b>Live building</b><p>A 160 m map, five segmented character rigs and ten tutorial steps were all built through the CLI without opening the editor.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Method</h2>
+  <ul class="plain">
+    <li>Each test ramped load in steps and sampled server fps for 3–5 s after every step. It stopped at the first breach: fps under 20–25, memory over 27 GB, or a Lua error.</li>
+    <li>To separate a creation spike from ongoing cost, I created loads gradually and then measured again at steady state.</li>
+    <li>Causes were isolated with <code>Scene:SetProfileScriptsUpdate</code> plus microbenchmarks timed with <code>AE:GetDebugTime</code>.</li>
+    <li>All test objects were created at least 200 m from play areas and removed afterwards.</li>
+    <li>Organic findings (B3, B7, B8, B10–B15) came up while building the game. Controlled findings (B1, B2, B5, B6, B9) came from the stress harness.</li>
+    <li>Limits: one host, one native client, one session. Client-side numbers depend on the hardware. I did not test multiple concurrent human players.</li>
+  </ul>
+</section>
+
+<footer>
+  <span>Compiled by Claude (Opus 5.5) working through the virtualmatter CLI and MCP, 6 Oct 2026.</span>
+  <span>Workarounds for B1, B3, B8 and B12 are in the Ashlight scripts: Hollow movement LOD, NPC cap of 24, fall-catch, resumable builders, and a string-serialized ledger.</span>
+</footer>
+
+</div>
+
+</body>
+</html>
