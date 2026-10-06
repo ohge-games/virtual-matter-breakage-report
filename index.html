@@ -180,7 +180,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B26</td><td><span class="sev med">Medium</span></td><td><a href="#b26">Screenshot tool can't show final visuals</a></td><td>Low LOD, no custom lighting</td></tr>
         <tr><td class="mono">B27</td><td><span class="sev high">High</span></td><td><a href="#b27"><code>Time.time</code> restarts on every Lua reload</a></td><td>Every hot reload</td></tr>
         <tr><td class="mono">B28</td><td><span class="sev crit">Critical</span></td><td><a href="#b28">Clients keep terrain the server has removed</a></td><td>Static removes 2–100 m from the camera</td></tr>
-        <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part</td></tr>
+        <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part; ramp worst 893 ms</td></tr>
         <tr><td class="mono">B30</td><td><span class="sev med">Medium</span></td><td><a href="#b30">The SDK character controller jumps 2.5 m and has no slope limit</a></td><td>Walls under ~2.6 m are climbable</td></tr>
         <tr><td class="mono">B31</td><td><span class="sev med">Medium</span></td><td><a href="#b31">Scaled rig parts: forced rays miss them and their units don't match the world</a></td><td>Part scale 0.19; forced ray hit nothing</td></tr>
         <tr><td class="mono">B32</td><td><span class="sev med">Medium</span></td><td><a href="#b32">Every Lua reload destroys runtime-built objects</a></td><td class="num">10–30 s of stutter per deploy</td></tr>
@@ -190,7 +190,8 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B36</td><td><span class="sev high">High</span></td><td><a href="#b36">Left-handed parallelepipeds silently build nothing</a></td><td>327 facets, every home wall; SDK <code>Explosion.lua</code></td></tr>
         <tr><td class="mono">B37</td><td><span class="sev med">Medium</span></td><td><a href="#b37">Voxel ops never report an empty result</a></td><td>Any degenerate shape</td></tr>
         <tr><td class="mono">B38</td><td><span class="sev low">Low</span></td><td><a href="#b38">SDK editor scripts cost ~3 ms per server frame when idle</a></td><td class="num">3.0 ms vs &lt;0.6 ms for the game</td></tr>
-        <tr><td class="mono">B39</td><td><span class="sev low">Low</span></td><td><a href="#b39">Server memory climbs on an idle, empty server</a></td><td class="num">12.6 → 15.9 GB in 75 min</td></tr>
+        <tr><td class="mono">B39</td><td><span class="sev low">Low</span></td><td><a href="#b39">Server memory climbs on an idle, empty server</a></td><td class="num">Atlas capped at 5,000 MB; +7 MB/min after</td></tr>
+        <tr><td class="mono">B40</td><td><span class="sev low">Low</span></td><td><a href="#b40">Inactive objects ignore forced raycasts</a></td><td>Forced ray returns nil</td></tr>
       </tbody>
     </table>
   </div>
@@ -696,6 +697,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Mitigation shipped</h4><p>A spawn pool. Six enemy rigs are pre-built while inactive, one part every 0.35 s when calm and every 1.5 s during fights. A spawn activates a pooled rig. Measured spawn cost: 4–20 ms, down from about 320 ms. Bulwarks now come from their own pre-built pool, and the Matron's 10 parts are staged before her fight (her spawn measured 10 ms), so neither binds assets mid-combat.</p></div>
       <div><h4>Suggested fix</h4><p>Share voxel data between instances of the same asset (copy-on-write), and load or bind assets asynchronously off the main thread.</p></div>
     </div>
+    <div>
+      <h4>Stress test: worst case</h4>
+      <p>A siege wave, an Ash Hound pack, a Lantern Thief, the Matron awake and a Colossus fight at once, with 5 fake players and nobody online. Teardown afterwards was verified clean. In the baseline, the ramp-up stalled whenever the pool ran dry and a rig had to be built synchronously (about 320 ms each).</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Phase</th><th>Server fps</th><th>p95</th><th>p99</th><th>Worst frame</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Baseline, ramp-up</td><td class="num">30.4</td><td class="num">–</td><td class="num">508 ms</td><td class="num">893 ms</td><td>Synchronous rig builds when the pool ran dry</td></tr>
+            <tr><td>Baseline, steady (26 Hollows + 2 bosses)</td><td class="num">50–51</td><td class="num">26–27 ms</td><td class="num">–</td><td class="num">84–94 ms</td><td>Script cost: Hollow 3.1 ms (39 instances), Body 1.1 ms</td></tr>
+            <tr><td>With fixes, steady</td><td class="num">56.3</td><td class="num">21.6 ms</td><td class="num">23.8 ms</td><td class="num">29 ms</td><td>No cold builds mid-fight, throttled pool rebuild, jittered AI think times, lighter static jobs</td></tr>
+            <tr><td>With fixes, ramp-up</td><td class="num">–</td><td class="num">–</td><td class="num">341 ms</td><td class="num">663 ms</td><td>Spikes remain; under investigation</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The fixes bring the steady state close to the idle budget, but ramp-up spikes are still under investigation. A siege also starves at 16 Hollows, because the pool can't refill mid-fight without the stalls above. Pool recycling and per-spike attribution are in progress.</p>
+    </div>
   </article>
 
   <article class="record med" id="b30">
@@ -846,15 +863,31 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div class="rec-head"><span class="rec-id">B39</span><h3>Server memory climbs on an idle, empty server</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Long-running worlds, and hosts that pack several worlds per machine.</dd>
-      <dt>What</dt><dd>QA memory samples after a restart showed the server process growing from 12.6 GB to 15.9 GB over 75 minutes with nobody online. The largest grower was the Voxel DB atlas, from 3.76 GB to 5.0 GB (about 17 MB per minute). The surface store and the Lua heap stayed flat. Before the previous restart, memory had plateaued at about 20.8 GB.</dd>
+      <dt>What</dt><dd>QA memory samples after a restart showed the server process growing from 12.6 GB to 15.9 GB over 75 minutes with nobody online. The largest grower was the Voxel DB atlas, from 3.76 GB to 5.0 GB (about 17 MB per minute). The surface store and the Lua heap stayed flat. Before the previous restart, memory had plateaued at about 20.8 GB.<br><br><b>Update:</b> the atlas then held at exactly 5,000 MB for over 25 minutes, which looks like an engine cap. Total memory reached 16.5 GB and kept growing at about 7 MB per minute after the atlas stopped; the surface store was 5,251 MB and the Lua heap 12.4 MB. Idle performance stayed healthy throughout: 57.7–58.4 fps, 11.3–11.5 ms per update, worst frame 22–27 ms.</dd>
       <dt>When</dt><dd>Continuously after a restart, on an idle server.</dd>
       <dt>Where</dt><dd>The engine's Voxel DB atlas.</dd>
-      <dt>Why</dt><dd>Inferred: the atlas fills its cache over time and only evicts near a ceiling, given the earlier plateau. A leak isn't ruled out until the plateau is confirmed.</dd>
+      <dt>Why</dt><dd>The atlas fills a cache up to a fixed 5,000 MB cap (measured). The remaining slow growth of about 7 MB per minute comes from somewhere else, and its source is unknown.</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>An idle world gains gigabytes of memory, so its footprint depends on how long it has been up rather than on what players are doing. If the plateau doesn't hold, a long-running world eventually runs out of memory.</p></div>
-      <div><h4>Mitigation</h4><p>Being watched for a plateau. Nothing in game code touches the atlas.</p></div>
+      <div><h4>Mitigation</h4><p>The atlas is confirmed capped; the residual growth is still being watched. Nothing in game code touches either.</p></div>
       <div><h4>Suggested fix</h4><p>Cap the atlas with a documented, configurable budget, and expose its size and eviction counts through <code>Server:GetMemoryUsage()</code>.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b40">
+    <div class="rec-head"><span class="rec-id">B40</span><h3>Inactive objects ignore forced raycasts</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone measuring or decorating pooled or template objects while they are parked out of sight.</dd>
+      <dt>What</dt><dd><code>Cast:Ray(...):Force(obj):Run()</code> returns nil for an object that is not <code>activeInHierarchy</code>, even with the right transform and voxels. This was seen on Rig Library templates and on pooled enemy rigs.</dd>
+      <dt>When</dt><dd>Whenever the target object, or any of its parents, is inactive.</dd>
+      <dt>Where</dt><dd><code>Cast:Ray</code> with <code>Force</code>.</dd>
+      <dt>Why</dt><dd>Inferred: raycasts only consider active objects, and <code>Force</code> doesn't override that. Nothing in the result says the target was skipped.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Pools (B29) keep objects inactive precisely so they cost nothing, which is exactly when a game wants to measure and dress them. Together with B31, forced rays are unreliable for any rig that isn't live and at scale 1.</p></div>
+      <div><h4>Mitigation</h4><p>The Hollow pool activates a parked rig (at y = −60) only while it is being dressed, and only between fights.</p></div>
+      <div><h4>Suggested fix</h4><p>Let a forced ray hit its target regardless of active state, or return an explicit "target inactive" result instead of nil.</p></div>
     </div>
   </article>
 </section>
@@ -915,6 +948,9 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B29 (siege)</td><td>Permanent Hollow pool of 14 for the siege: its warning phase holds 59 fps with a worst frame of 31 ms (was 48.5 fps, 140 ms)</td><td>Shipped, measured</td></tr>
         <tr><td class="mono">B38</td><td>None possible in game code</td><td>Reported</td></tr>
         <tr><td class="mono">B39</td><td>Watching for a plateau</td><td>Monitoring</td></tr>
+        <tr><td class="mono">B29 (stress test)</td><td>No cold builds mid-fight, throttled pool rebuild, jittered AI think, lighter static jobs: steady 50–51 → 56.3 fps, worst frame 84–94 → 29 ms. Ramp-up spikes (p99 341 ms) still under investigation</td><td>Partly fixed, measured</td></tr>
+        <tr><td class="mono">B39 (update)</td><td>Atlas confirmed capped at 5,000 MB; residual growth of ~7 MB/min watched</td><td>Monitoring</td></tr>
+        <tr><td class="mono">B40</td><td>Parked rigs activated briefly, between fights, while being dressed</td><td>Shipped</td></tr>
       </tbody>
     </table>
   </div>
