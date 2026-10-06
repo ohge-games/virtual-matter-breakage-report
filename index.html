@@ -683,7 +683,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Spawning enemies mid-fight stutters everyone. Combined with B17 (per-object cost) and B18 (clients can't instance assets), animated multi-part characters are expensive at every stage.</p></div>
-      <div><h4>Mitigation shipped</h4><p>A spawn pool. Six enemy rigs are pre-built while inactive, one part every 0.35 s when calm and every 1.5 s during fights. A spawn activates a pooled rig. Measured spawn cost: 4–20 ms, down from about 320 ms.</p></div>
+      <div><h4>Mitigation shipped</h4><p>A spawn pool. Six enemy rigs are pre-built while inactive, one part every 0.35 s when calm and every 1.5 s during fights. A spawn activates a pooled rig. Measured spawn cost: 4–20 ms, down from about 320 ms. Bulwarks now come from their own pre-built pool, and the Matron's 10 parts are staged before her fight, so neither binds assets mid-combat.</p></div>
       <div><h4>Suggested fix</h4><p>Share voxel data between instances of the same asset (copy-on-write), and load or bind assets asynchronously off the main thread.</p></div>
     </div>
   </article>
@@ -725,6 +725,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B28</td><td>Terrain reworks scheduled for an empty server; server-side ray audits; floating props found and grounded (a dead tree hung 35 m up, and an oil drum 1.3 m up after the Pit rim was reshaped)</td><td>Process + fixed</td></tr>
         <tr><td class="mono">Arena</td><td>Pit rim reshaped into crags; stair access to all three high-ground shelves verified with a 0.5 m-step flood fill in both directions</td><td>Verified live</td></tr>
         <tr><td class="mono">B29</td><td>Pre-built enemy rig pool; spawn 320 ms → 4–20 ms</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono">B29 (follow-up)</td><td>Bulwark rigs pooled the same way (previously about 300 ms per spawn); the Matron's 10 parts staged ahead of the fight</td><td>Shipped</td></tr>
         <tr><td class="mono">B28 (update)</td><td>Phantom geometry also seen 2–10 m from the camera after about 600 hub edits; server rays confirm the plaza is clear. Hub and plaza dressing now follows the empty-server rule too</td><td>Process</td></tr>
         <tr><td class="mono">B23 (follow-up)</td><td>Mouse clicks and UI keys are now event-queued too (attacks, build placement, menus)</td><td>Shipped</td></tr>
         <tr><td class="mono">B19 (follow-up)</td><td>The Keeper's automatic empty-server save fired twice on its own: the journal was cleared and the terrain marked saved</td><td>Verified live</td></tr>
