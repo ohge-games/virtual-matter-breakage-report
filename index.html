@@ -182,6 +182,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B28</td><td><span class="sev crit">Critical</span></td><td><a href="#b28">Clients keep terrain the server has removed</a></td><td>Static removes 2–100 m from the camera</td></tr>
         <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part</td></tr>
         <tr><td class="mono">B30</td><td><span class="sev med">Medium</span></td><td><a href="#b30">The SDK character controller jumps 2.5 m and has no slope limit</a></td><td>Walls under ~2.6 m are climbable</td></tr>
+        <tr><td class="mono">B31</td><td><span class="sev med">Medium</span></td><td><a href="#b31">Scaled rig parts: forced rays miss them and their units don't match the world</a></td><td>Part scale 0.19; forced ray hit nothing</td></tr>
       </tbody>
     </table>
   </div>
@@ -684,7 +685,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Spawning enemies mid-fight stutters everyone. Combined with B17 (per-object cost) and B18 (clients can't instance assets), animated multi-part characters are expensive at every stage.</p></div>
-      <div><h4>Mitigation shipped</h4><p>A spawn pool. Six enemy rigs are pre-built while inactive, one part every 0.35 s when calm and every 1.5 s during fights. A spawn activates a pooled rig. Measured spawn cost: 4–20 ms, down from about 320 ms. Bulwarks now come from their own pre-built pool, and the Matron's 10 parts are staged before her fight, so neither binds assets mid-combat.</p></div>
+      <div><h4>Mitigation shipped</h4><p>A spawn pool. Six enemy rigs are pre-built while inactive, one part every 0.35 s when calm and every 1.5 s during fights. A spawn activates a pooled rig. Measured spawn cost: 4–20 ms, down from about 320 ms. Bulwarks now come from their own pre-built pool, and the Matron's 10 parts are staged before her fight (her spawn measured 10 ms), so neither binds assets mid-combat.</p></div>
       <div><h4>Suggested fix</h4><p>Share voxel data between instances of the same asset (copy-on-write), and load or bind assets asynchronously off the main thread.</p></div>
     </div>
   </article>
@@ -702,6 +703,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Impact</h4><p>Boundaries and "impassable" ruin walls that look tall enough can be jumped. Small interior spaces can't use ledges to gate progress at all: no ledge inside a 3 m crypt stops a 2.5 m jump.</p></div>
       <div><h4>Mitigation</h4><p>Game-side wall heights. The map edge keeps at least 2.9 m above the highest foothold (a 0.4 m margin over the apex). The Undercroft crypt uses a one-way door instead of a ledge. Lowering <code>charCtrl.jumpHeight</code> to about 1.2 m is under consideration.</p></div>
       <div><h4>Suggested fix</h4><p>Ship a human-scale default jump (about 1–1.2 m), add a configurable maximum walkable slope, and document the jump apex next to level-design guidance in the skills.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b31">
+    <div class="rec-head"><span class="rec-id">B31</span><h3>Scaled rig parts: forced rays miss them and their units don't match the world</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone adding voxel detail to a segmented character at runtime (armour, damage, decals), and anyone who tests that code offline first.</dd>
+      <dt>What</dt><dd>Armour stamped live onto a Warden rig came out as an oversized, boxy shell of plates that hid the head, although it passed every offline mock. On the live rig, every part (head, torso, shin) has scale 0.1926 and the same position as the root; each part's shape is offset inside its own voxel space. A ray with <code>Force(shinPart)</code> hit nothing at a point where the same ray without <code>Force</code> hit the shin at 1.29 m.</dd>
+      <dt>When</dt><dd>When code measures or edits a part using local offsets that assume scale 1, or relies on a <code>Force</code>-filtered ray to find a part's surface.</dd>
+      <dt>Where</dt><dd>The SDK's flat-rig convention (parts parented to the root, geometry offset in voxel space) combined with scaled VoxelData; <code>Cast:Ray(...):Force(part)</code>.</dd>
+      <dt>Why</dt><dd>Inferred: world, voxel and local units differ per part once VoxelData is scaled, and the force filter does not reliably resolve hits against some scaled parts. Nothing reports the mismatch, so the maths silently produces the wrong size.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Runtime character customisation is error-prone, and offline tests give false confidence unless they model scaled flat parts. The failure is visual and only shows on a live client.</p></div>
+      <div><h4>Mitigation</h4><p>The armour visuals were reverted within minutes, before any player saw them. They are being rebuilt from measurements taken on the live parts instead of assumed offsets, and offline mocks now have to model scaled flat parts.</p></div>
+      <div><h4>Suggested fix</h4><p>Make <code>Force(obj)</code> rays honour the object's scale, and expose helpers that convert between world, local and voxel space per object (for example <code>obj:WorldToVoxel(p)</code>). Document the flat-rig convention, including where a part's geometry sits, in the segmented-character skill.</p></div>
     </div>
   </article>
 </section>
@@ -742,12 +759,13 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B28</td><td>Terrain reworks scheduled for an empty server; server-side ray audits; floating props found and grounded (a dead tree hung 35 m up, and an oil drum 1.3 m up after the Pit rim was reshaped)</td><td>Process + fixed</td></tr>
         <tr><td class="mono">Arena</td><td>Pit rim reshaped into crags; stair access to all three high-ground shelves verified with a 0.5 m-step flood fill in both directions</td><td>Verified live</td></tr>
         <tr><td class="mono">B29</td><td>Pre-built enemy rig pool; spawn 320 ms → 4–20 ms</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B29 (follow-up)</td><td>Bulwark rigs pooled the same way (previously about 300 ms per spawn); the Matron's 10 parts staged ahead of the fight</td><td>Shipped</td></tr>
+        <tr><td class="mono">B29 (follow-up)</td><td>Bulwark rigs pooled the same way (previously about 300 ms per spawn); the Matron's 10 parts staged ahead of the fight, and her spawn measured at 10 ms live</td><td>Shipped, measured</td></tr>
         <tr><td class="mono">B28 (update)</td><td>Phantom geometry also seen 2–10 m from the camera after about 600 hub edits; server rays confirm the plaza is clear. Hub and plaza dressing now follows the empty-server rule too</td><td>Process</td></tr>
         <tr><td class="mono">B23 (follow-up)</td><td>Mouse clicks and UI keys are now event-queued too (attacks, build placement, menus)</td><td>Shipped</td></tr>
         <tr><td class="mono">B19 (follow-up)</td><td>The Keeper's automatic empty-server save fired twice on its own: the journal was cleared and the terrain marked saved</td><td>Verified live</td></tr>
         <tr><td class="mono">"Odd walls"</td><td>The 12 bare ruin shells were rebuilt as dressed ruined buildings (2 168 ops, 0 errors). The hub wall became a scavenged palisade, ash patches became flat paint, the sphere berm became a continuous boundary, and test structures were removed through the journal</td><td>Shipped; edge being made more natural</td></tr>
         <tr><td class="mono">B30</td><td>Edge walls kept at least 2.9 m above the highest foothold; the Undercroft gated by a one-way door rather than a ledge</td><td>Shipped</td></tr>
+        <tr><td class="mono">B31</td><td>Stamped armour visuals reverted before players saw them; rebuilding from live part measurements; offline mocks must model scaled flat parts</td><td>Reverted, in progress</td></tr>
       </tbody>
     </table>
   </div>
