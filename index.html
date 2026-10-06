@@ -187,6 +187,8 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B33</td><td><span class="sev low">Low</span></td><td><a href="#b33">No per-object time scale, no UI gradients</a></td><td>Hit-stop and vignettes faked</td></tr>
         <tr><td class="mono">B34</td><td><span class="sev low">Low</span></td><td><a href="#b34">New scripts can't be attached for about a minute</a></td><td>"Script file does not exist"</td></tr>
         <tr><td class="mono">B35</td><td><span class="sev med">Medium</span></td><td><a href="#b35">A coding harness can't run automated playtests</a></td><td>~1 in 3 calls "fetch failed"; fly-cam client</td></tr>
+        <tr><td class="mono">B36</td><td><span class="sev high">High</span></td><td><a href="#b36">Left-handed parallelepipeds silently build nothing</a></td><td class="num">327 missing facets, 0 errors</td></tr>
+        <tr><td class="mono">B37</td><td><span class="sev med">Medium</span></td><td><a href="#b37">Voxel ops never report an empty result</a></td><td>Any degenerate shape</td></tr>
       </tbody>
     </table>
   </div>
@@ -789,6 +791,38 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Add an <code>open --play</code> mode (or a headless play client) whose character can be driven from <code>run-lua</code>, and have the CLI retry transient network failures itself and report them with a status.</p></div>
     </div>
   </article>
+
+  <article class="record high" id="b36">
+    <div class="rec-head"><span class="rec-id">B36</span><h3>Left-handed parallelepipeds silently build nothing</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone building oriented boxes with <code>Shape.Parallelepiped(center, a, b, c)</code>: cliff facets, banners, lids, armour plates.</dd>
+      <dt>What</dt><dd>When the three axes are left-handed (<code>dot(a, cross(b, c)) &lt; 0</code>), the Vox op runs, returns no error, and adds, removes or paints no voxels. A parallelepiped is symmetric, so the same box with <code>c</code> negated (right-handed) builds normally. The World Dresser built every north and east edge facet with left-handed axis triples, (1,0,0)/(0,1,0)/(0,0,−1) and (0,0,1)/(0,1,0)/(1,0,0). All 327 of them are missing live: the north and east cliffs, the north and east runs of the NW and SE corners, and 4 plaza banners. Every right-handed facet on the south and west edges stands, and the rubble placed on top of the missing facets floats at y = 8–9. Two sarcophagus lids in the Undercroft and six arch and coping pieces on the Refuge islands are missing for the same reason.</dd>
+      <dt>When</dt><dd>On every op whose parallelepiped axes form a left-handed basis.</dd>
+      <dt>Where</dt><dd><code>Shape.Parallelepiped</code> as used by <code>Vox:Add</code>, <code>Remove</code> and <code>Paint</code>.</dd>
+      <dt>Why</dt><dd>Measured: a mock that drops left-handed parallelepipeds reproduces QA's ray height maps cell for cell. The shape's inside test presumably assumes a positive determinant, so a negative one makes every point test as outside.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Whole sections of a world go missing with nothing in the error log, and anything placed on top of them floats. It surfaced as the "boulders hanging in the air" over the north and east edges. Any code that stamps oriented plates, including the armour on characters, needs checking.</p></div>
+      <div><h4>Mitigation</h4><p>Normalise handedness in the game's parallelepiped helper before every call: if <code>dot(a, cross(b, c)) &lt; 0</code>, negate <code>c</code>. The north and east cliffs are being rebuilt with right-handed axes.</p></div>
+      <div><h4>Suggested fix</h4><p>Normalise the basis inside <code>Shape.Parallelepiped</code>, or at least raise an error for a left-handed or degenerate basis.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b37">
+    <div class="rec-head"><span class="rec-id">B37</span><h3>Voxel ops never report an empty result</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone building worlds procedurally through the Vox API.</dd>
+      <dt>What</dt><dd>Neither <code>Run()</code> nor <code>OnFinished</code> reports how many voxels an op changed. A degenerate shape (a left-handed parallelepiped as in B36, a zero-size box, or an op wholly outside its VoxelData) fails silently, and the op queue still reports it as done.</dd>
+      <dt>When</dt><dd>On any op that ends up changing nothing.</dd>
+      <dt>Where</dt><dd>The Vox op pipeline and its completion callback.</dd>
+      <dt>Why</dt><dd>The completion path carries no result count or warning.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Silent no-ops are found only by auditing the world afterwards, often hours later and by a different agent. B36 went unnoticed through several builds for this reason.</p></div>
+      <div><h4>Mitigation</h4><p>Procedural builds are verified with read-only ray audits (height maps and upward "underside" rays) rather than by trusting the queue's "done".</p></div>
+      <div><h4>Suggested fix</h4><p>Pass the number of voxels changed to <code>OnFinished</code>, and log a warning when an op changes nothing.</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -841,6 +875,8 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B33 (update)</td><td>Hit-stop and directional damage vignette deployed</td><td>Shipped, verified server-side</td></tr>
         <tr><td class="mono">B34</td><td>Wait for the <code>.zma</code> or retry before attaching a new script</td><td>Process</td></tr>
         <tr><td class="mono">B35</td><td>Retry with backoff for fetch failures (read back state before retrying world-changing Lua); boss logic checked in offline harnesses and server-side probes; human playtests for feel</td><td>Process</td></tr>
+        <tr><td class="mono">B36</td><td>Handedness normalised in the parallelepiped helper; north and east cliffs being rebuilt</td><td>Fix staged</td></tr>
+        <tr><td class="mono">B37</td><td>Read-only ray audits (height maps, underside rays) after every procedural build</td><td>Process</td></tr>
       </tbody>
     </table>
   </div>
