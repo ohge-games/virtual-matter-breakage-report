@@ -183,6 +183,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part</td></tr>
         <tr><td class="mono">B30</td><td><span class="sev med">Medium</span></td><td><a href="#b30">The SDK character controller jumps 2.5 m and has no slope limit</a></td><td>Walls under ~2.6 m are climbable</td></tr>
         <tr><td class="mono">B31</td><td><span class="sev med">Medium</span></td><td><a href="#b31">Scaled rig parts: forced rays miss them and their units don't match the world</a></td><td>Part scale 0.19; forced ray hit nothing</td></tr>
+        <tr><td class="mono">B32</td><td><span class="sev med">Medium</span></td><td><a href="#b32">Every Lua reload destroys runtime-built objects</a></td><td class="num">10–30 s of stutter per deploy</td></tr>
       </tbody>
     </table>
   </div>
@@ -721,6 +722,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Make <code>Force(obj)</code> rays honour the object's scale, and expose helpers that convert between world, local and voxel space per object (for example <code>obj:WorldToVoxel(p)</code>). Document the flat-rig convention, including where a part's geometry sits, in the segmented-character skill.</p></div>
     </div>
   </article>
+
+  <article class="record med" id="b32">
+    <div class="rec-head"><span class="rec-id">B32</span><h3>Every Lua reload destroys runtime-built objects</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Any game that pre-builds pools or staged assets at runtime, and every player online when a script is deployed.</dd>
+      <dt>What</dt><dd>After a hot reload (a file save or <code>Server:LuaReset</code>), the six pooled Hollow rigs were already gone before the game script's <code>Start()</code> ran. They were inactive, parked at y = −60, with <code>save = false</code>. A debug-logged scan of <code>Scene:GetAllObjects()</code> in <code>Start()</code> found none of them. The pool then rebuilt from scratch: one rig ready at t = 4 s, all six at t = 16 s.</dd>
+      <dt>When</dt><dd>On every Lua reload.</dd>
+      <dt>Where</dt><dd>The reload path: objects with <code>save = false</code> are removed before any script's <code>Start()</code> runs.</dd>
+      <dt>Why</dt><dd>Reload appears to reset the scene to its saved state, so only <code>save = true</code> objects survive. Combined with B29 (each rebuilt rig part costs a 35–95 ms asset bind), a reload re-pays the full cost of every pool.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Every deploy while players are online costs roughly 10–30 s of stutter. QA measured 53.8 fps with a worst frame of 109 ms after one reload. Together with B8, a live edit costs both the work in flight and everything pre-built.</p></div>
+      <div><h4>Mitigation</h4><p>None found in Lua short of persisting pools with <code>save = true</code>, which bloats the saved scene. Adopting the surviving pool after a reload was tried and reverted, since nothing survives to adopt. Deploys are batched and made when nobody is online where possible.</p></div>
+      <div><h4>Suggested fix</h4><p>Offer a runtime-only flag that keeps an object across Lua reloads without saving it to the scene, or let scripts hand objects to their next instance through an <code>OnBeforeReload</code> hook (see B8).</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -766,6 +783,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">"Odd walls"</td><td>The 12 bare ruin shells were rebuilt as dressed ruined buildings (2 168 ops, 0 errors). The hub wall became a scavenged palisade, ash patches became flat paint, the sphere berm became a continuous boundary, and test structures were removed through the journal</td><td>Shipped; edge being made more natural</td></tr>
         <tr><td class="mono">B30</td><td>Edge walls kept at least 2.9 m above the highest foothold; the Undercroft gated by a one-way door rather than a ledge</td><td>Shipped</td></tr>
         <tr><td class="mono">B31</td><td>Stamped armour visuals reverted before players saw them; rebuilding from live part measurements; offline mocks must model scaled flat parts</td><td>Reverted, in progress</td></tr>
+        <tr><td class="mono">B32</td><td>Deploys batched and made with nobody online where possible; adopting the pool after reload tried and reverted</td><td>Process</td></tr>
       </tbody>
     </table>
   </div>
