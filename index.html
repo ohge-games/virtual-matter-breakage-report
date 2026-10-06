@@ -170,7 +170,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B16</td><td><span class="sev crit">Critical</span></td><td><a href="#b16">Moving voxel objects + raycasts spike the server</a></td><td class="num">100–245 ms frames</td></tr>
         <tr><td class="mono">B17</td><td><span class="sev high">High</span></td><td><a href="#b17">Fixed per-object cost and thin headroom</a></td><td class="num">~21 µs/object, ~4 ms spare</td></tr>
         <tr><td class="mono">B18</td><td><span class="sev med">Medium</span></td><td><a href="#b18">Clients can't instance assets</a></td><td>No client-side rig parts</td></tr>
-        <tr><td class="mono">B19</td><td><span class="sev crit">Critical</span></td><td><a href="#b19">Saving the terrain freezes the server</a></td><td class="num">&gt;60 s for 250 MB</td></tr>
+        <tr><td class="mono">B19</td><td><span class="sev crit">Critical</span></td><td><a href="#b19">Saving the terrain freezes the server</a></td><td class="num">33–60+ s for 250 MB</td></tr>
         <tr><td class="mono">B20</td><td><span class="sev high">High</span></td><td><a href="#b20">Terrain edits aren't persistent by default</a></td><td>Every gameplay edit</td></tr>
         <tr><td class="mono">B21</td><td><span class="sev high">High</span></td><td><a href="#b21">Sync overwrite race, again</a></td><td>2 saves &lt;10 s apart</td></tr>
         <tr><td class="mono">B22</td><td><span class="sev med">Medium</span></td><td><a href="#b22">Hidden browser tabs throttle the client</a></td><td class="num">6–12 fps</td></tr>
@@ -184,6 +184,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B30</td><td><span class="sev med">Medium</span></td><td><a href="#b30">The SDK character controller jumps 2.5 m and has no slope limit</a></td><td>Walls under ~2.6 m are climbable</td></tr>
         <tr><td class="mono">B31</td><td><span class="sev med">Medium</span></td><td><a href="#b31">Scaled rig parts: forced rays miss them and their units don't match the world</a></td><td>Part scale 0.19; forced ray hit nothing</td></tr>
         <tr><td class="mono">B32</td><td><span class="sev med">Medium</span></td><td><a href="#b32">Every Lua reload destroys runtime-built objects</a></td><td class="num">10–30 s of stutter per deploy</td></tr>
+        <tr><td class="mono">B33</td><td><span class="sev low">Low</span></td><td><a href="#b33">No per-object time scale, no UI gradients</a></td><td>Hit-stop and vignettes faked</td></tr>
       </tbody>
     </table>
   </div>
@@ -516,17 +517,17 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record crit" id="b19">
-    <div class="rec-head"><span class="rec-id">B19</span><h3>Saving the terrain freezes the server for over a minute</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B19</span><h3>Saving the terrain freezes the server for 33 seconds to over a minute</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Everyone connected when a world saves its terrain.</dd>
-      <dt>What</dt><dd><code>VoxelData:Save()</code> on the static terrain (a 160 m map at 32 vpm, a 250 MB <code>.am</code>) blocked the main thread past the CLI's 60 s timeout. The CLI returned HTTP 504 and the world was frozen until the save finished. Sync then pulled a 100–120 MB <code>.am~</code> temp file into the local mirror.</dd>
+      <dt>What</dt><dd><code>VoxelData:Save()</code> on the static terrain (a 160 m map at 32 vpm, a 250 MB <code>.am</code>) blocked the main thread past the CLI's 60 s timeout. The CLI returned HTTP 504 and the world was frozen until the save finished. Sync then pulled a 100–120 MB <code>.am~</code> temp file into the local mirror.<br><br><b>Update:</b> a QA frame sampler happened to straddle one of the Terrain Keeper's automatic saves on an empty server. It recorded a single 33,415 ms frame (10.3 fps averaged over its 8 s window), and every <code>run-lua</code> in that window returned HTTP 504. The same 250 MB map therefore stalls the main thread for anywhere from about 33 s to over 60 s.</dd>
       <dt>When</dt><dd>On every save of the static terrain. <code>Server:SaveScene()</code> also re-saves it.</dd>
       <dt>Where</dt><dd>Static voxel serialization, which is synchronous and saves the whole file every time.</dd>
       <dt>Why</dt><dd>The save is a single blocking write of the entire common collection, with no async, incremental or per-chunk dirty path.</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>A persistent survival world can't save its terrain while anyone plays. Most terrain changes are only safe once the server is empty.</p></div>
-      <div><h4>Mitigation shipped</h4><p>A Terrain Keeper module saves the full terrain only after the server has been empty for 45 s, at most every 10 minutes. Between saves, every gameplay edit is written to a compact journal that survives reloads and restarts, and is replayed onto the reverted terrain after a restart. The first automatic save ran while the server was empty.</p></div>
+      <div><h4>Mitigation shipped</h4><p>A Terrain Keeper module saves the full terrain only after the server has been empty for 45 s, at most every 10 minutes. Between saves, every gameplay edit is written to a compact journal that survives reloads and restarts, and is replayed onto the reverted terrain after a restart. The first automatic save ran while the server was empty. The Keeper now saves edits that the journal doesn't cover at most once an hour.</p></div>
       <div><h4>Suggested fix</h4><p>Save only dirty chunks, asynchronously on a worker thread with a copy-on-write snapshot. Expose an edit log the engine replays itself.</p></div>
     </div>
   </article>
@@ -738,6 +739,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Offer a runtime-only flag that keeps an object across Lua reloads without saving it to the scene, or let scripts hand objects to their next instance through an <code>OnBeforeReload</code> hook (see B8).</p></div>
     </div>
   </article>
+
+  <article class="record" id="b33">
+    <div class="rec-head"><span class="rec-id">B33</span><h3>No per-object time scale, and no gradient or vignette in the UI</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers building melee combat feel and screen-space damage feedback.</dd>
+      <dt>What</dt><dd>Melee hit-stop needs the striker's and the victim's animation to pause for about 60–120 ms while the world keeps running. The engine offers only the global <code>Time.timeScale</code>, which slows every object, the server simulation and every client. Screen-edge damage feedback hits a similar gap: MUI panels are flat colours, with no gradient or vignette primitive.</dd>
+      <dt>When</dt><dd>Whenever a game wants local slow-motion or soft screen-edge effects.</dd>
+      <dt>Where</dt><dd><code>Time.timeScale</code>; MUI panel styling.</dd>
+      <dt>Why</dt><dd>Time scaling exists only globally, and the UI has no per-panel gradient fill.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Common combat-feel techniques need workarounds in game code, which cost client time and are easy to get wrong.</p></div>
+      <div><h4>Mitigation (staged)</h4><p>The client wraps each character rig's update and feeds it 5% of the frame time during a hit-stop; the rig still follows its root, and its springs hold. The directional damage vignette is built from four edges of two overlapping translucent bands (a stepped gradient), updated only when the quantised alpha changes. Both are staged and not yet verified in the engine.</p></div>
+      <div><h4>Suggested fix</h4><p>Add a per-object (or per-hierarchy) time scale that scripts and animation read, and a gradient fill for MUI panels.</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -784,6 +801,8 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B30</td><td>Edge walls kept at least 2.9 m above the highest foothold; the Undercroft gated by a one-way door rather than a ledge</td><td>Shipped</td></tr>
         <tr><td class="mono">B31</td><td>Stamped armour visuals reverted before players saw them; rebuilding from live part measurements; offline mocks must model scaled flat parts</td><td>Reverted, in progress</td></tr>
         <tr><td class="mono">B32</td><td>Deploys batched and made with nobody online where possible; adopting the pool after reload tried and reverted</td><td>Process</td></tr>
+        <tr><td class="mono">B19 (update)</td><td>One automatic empty-server save measured at a 33.4 s main-thread stall; the Keeper saves non-journaled edits at most hourly</td><td>Measured</td></tr>
+        <tr><td class="mono">B33</td><td>Hit-stop by scaling each rig's update time; vignette from stepped translucent bands</td><td>Staged, unverified</td></tr>
       </tbody>
     </table>
   </div>
