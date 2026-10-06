@@ -803,7 +803,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Whole sections of a world go missing with nothing in the error log, and anything placed on top of them floats. It surfaced as the "boulders hanging in the air" over the north and east edges. Any code that stamps oriented plates, including the armour on characters, needs checking.</p></div>
-      <div><h4>Mitigation</h4><p>Normalise handedness in the game's parallelepiped helper before every call: if <code>dot(a, cross(b, c)) &lt; 0</code>, negate <code>c</code>. The north and east cliffs are being rebuilt with right-handed axes.</p></div>
+      <div><h4>Mitigation</h4><p>Normalise handedness in the game's parallelepiped helper before every call: if <code>dot(a, cross(b, c)) &lt; 0</code>, negate <code>c</code>. The north and east cliffs were rebuilt this way (1,287 ops, 0 errors, with nobody online, followed by a full terrain save). A live ray audit afterwards found the lowest crest point at 6.7 m on the north edge (was 0.5 m) and 5.7 m on the east (was 0.0 m), 7.1 m and 6.9 m in front of the Spire, and no floating cells on either side. The four missing plaza banners were laid again.</p></div>
       <div><h4>Suggested fix</h4><p>Normalise the basis inside <code>Shape.Parallelepiped</code>, or at least raise an error for a left-handed or degenerate basis.</p></div>
     </div>
   </article>
@@ -875,7 +875,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B33 (update)</td><td>Hit-stop and directional damage vignette deployed</td><td>Shipped, verified server-side</td></tr>
         <tr><td class="mono">B34</td><td>Wait for the <code>.zma</code> or retry before attaching a new script</td><td>Process</td></tr>
         <tr><td class="mono">B35</td><td>Retry with backoff for fetch failures (read back state before retrying world-changing Lua); boss logic checked in offline harnesses and server-side probes; human playtests for feel</td><td>Process</td></tr>
-        <tr><td class="mono">B36</td><td>Handedness normalised in the parallelepiped helper; north and east cliffs being rebuilt</td><td>Fix staged</td></tr>
+        <tr><td class="mono">B36</td><td>Handedness normalised in the parallelepiped helper; north and east cliffs rebuilt (lowest crest N 0.5 → 6.7 m, E 0.0 → 5.7 m, 0 floating cells); plaza banners restored</td><td>Shipped, verified live</td></tr>
         <tr><td class="mono">B37</td><td>Read-only ray audits (height maps, underside rays) after every procedural build</td><td>Process</td></tr>
       </tbody>
     </table>
