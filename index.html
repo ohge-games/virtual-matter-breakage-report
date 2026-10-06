@@ -181,6 +181,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B27</td><td><span class="sev high">High</span></td><td><a href="#b27"><code>Time.time</code> restarts on every Lua reload</a></td><td>Every hot reload</td></tr>
         <tr><td class="mono">B28</td><td><span class="sev crit">Critical</span></td><td><a href="#b28">Clients keep terrain the server has removed</a></td><td>Static removes 2–100 m from the camera</td></tr>
         <tr><td class="mono">B29</td><td><span class="sev high">High</span></td><td><a href="#b29">Every voxel object deep-copies its asset on the main thread</a></td><td class="num">35–95 ms per part</td></tr>
+        <tr><td class="mono">B30</td><td><span class="sev med">Medium</span></td><td><a href="#b30">The SDK character controller jumps 2.5 m and has no slope limit</a></td><td>Walls under ~2.6 m are climbable</td></tr>
       </tbody>
     </table>
   </div>
@@ -687,6 +688,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Share voxel data between instances of the same asset (copy-on-write), and load or bind assets asynchronously off the main thread.</p></div>
     </div>
   </article>
+
+  <article class="record med" id="b30">
+    <div class="rec-head"><span class="rec-id">B30</span><h3>The SDK character controller jumps 2.5 m and has no slope limit</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers who use the example character controller as shipped, and their level designers. Ashlight's players use it unmodified.</dd>
+      <dt>What</dt><dd><code>Examples/Character Controller.lua</code> defaults to <code>jumpHeight = 2.5</code> (the apex, in metres) and <code>maxStepHeight = 0.5</code>, and has no slope limit: steepness is handled only by the ground probe and step-up. A wall has to stand more than about 2.6 m above the highest foothold in front of it to stop a player, not 2.5 m.</dd>
+      <dt>When</dt><dd>Whenever a level relies on a wall, ledge or steep slope to keep players out.</dd>
+      <dt>Where</dt><dd>The example character controller's defaults (<code>jumpHeight</code>, <code>maxStepHeight</code>, ground probe).</dd>
+      <dt>Why</dt><dd>The defaults are tuned for a platformer-style jump, roughly twice a typical human jump, and nothing in the controller rejects steep ground.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Boundaries and "impassable" ruin walls that look tall enough can be jumped. Small interior spaces can't use ledges to gate progress at all: no ledge inside a 3 m crypt stops a 2.5 m jump.</p></div>
+      <div><h4>Mitigation</h4><p>Game-side wall heights. The map edge keeps at least 2.9 m above the highest foothold (a 0.4 m margin over the apex). The Undercroft crypt uses a one-way door instead of a ledge. Lowering <code>charCtrl.jumpHeight</code> to about 1.2 m is under consideration.</p></div>
+      <div><h4>Suggested fix</h4><p>Ship a human-scale default jump (about 1–1.2 m), add a configurable maximum walkable slope, and document the jump apex next to level-design guidance in the skills.</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -730,6 +747,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B23 (follow-up)</td><td>Mouse clicks and UI keys are now event-queued too (attacks, build placement, menus)</td><td>Shipped</td></tr>
         <tr><td class="mono">B19 (follow-up)</td><td>The Keeper's automatic empty-server save fired twice on its own: the journal was cleared and the terrain marked saved</td><td>Verified live</td></tr>
         <tr><td class="mono">"Odd walls"</td><td>The 12 bare ruin shells were rebuilt as dressed ruined buildings (2 168 ops, 0 errors). The hub wall became a scavenged palisade, ash patches became flat paint, the sphere berm became a continuous boundary, and test structures were removed through the journal</td><td>Shipped; edge being made more natural</td></tr>
+        <tr><td class="mono">B30</td><td>Edge walls kept at least 2.9 m above the highest foothold; the Undercroft gated by a one-way door rather than a ledge</td><td>Shipped</td></tr>
       </tbody>
     </table>
   </div>
