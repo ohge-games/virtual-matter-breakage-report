@@ -194,6 +194,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B40</td><td><span class="sev low">Low</span></td><td><a href="#b40">Inactive objects ignore forced raycasts</a></td><td>Forced ray returns nil</td></tr>
         <tr><td class="mono">B41</td><td><span class="sev high">High</span></td><td><a href="#b41"><code>AE:GetDebugTime()</code> restarts with the server process</a></td><td>Every server restart</td></tr>
         <tr><td class="mono">B42</td><td><span class="sev med">Medium</span></td><td><a href="#b42">Baked rig variants are huge; a periodic freeze came with them</a></td><td class="num">329 MB for 111 variants; any bind 40–360 ms</td></tr>
+        <tr><td class="mono">B44</td><td><span class="sev high">High</span></td><td><a href="#b44">The server restarts without warning or a reason</a></td><td>3 restarts in one night</td></tr>
         <tr><td class="mono">B43</td><td><span class="sev med">Medium</span></td><td><a href="#b43">The server renders a headless client every frame</a></td><td class="num">~8 ms per frame; ~58 fps at idle</td></tr>
       </tbody>
     </table>
@@ -722,7 +723,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         </table>
       </div>
       <p><b>Spike attribution (resolved).</b> Wrapping 1,436 server functions during the ramp showed that every 300–716 ms frame was a spawn running the Hollow crust builder: 7–23 <code>Vox:Add</code> rubble plates on the torso part, which has scale 0.19. Lua took only 12–25 ms of that; the rest was the engine committing voxels. At scale 0.19, a 0.3 m plate is about 140 times as many voxels as the same plate at scale 1 (see the scaled-part op costs under Measured limits). The fix was to bake the crust into three torso variant assets with <code>VoxelData:SaveAs</code>, so spawns do no voxel ops at all, and to have hits paint chips instead of carving them. Pool part binds also showed up (36–72 ms for Hollows and 40–80 ms for Bulwarks), and are now paced. One 469 ms engine-side frame with no voxel ops in round 12 is still unexplained.</p>
-      <p><b>Still open:</b> forging armour onto a player rig still hitches: 43.5 fps, with 36 frames over 50 ms and a worst frame of 83 ms, for about 6 s. Every voxel op on a part at about 0.19 scale costs at least 6.6 ms of engine commit, typically 7–30 ms. Pre-baked armour tiers removed the voxel ops but brought the asset size and periodic freeze in B42, so that patch was reverted and forging remains open.</p>
+      <p><b>Forging (acceptable now):</b> forging armour onto a player rig first hitched at 43.5 fps, with 36 frames over 50 ms and a worst frame of 83 ms, for about 6 s. Every voxel op on a part at about 0.19 scale costs at least 6.6 ms of engine commit, typically 7–30 ms. Pre-baked tiers removed the voxel ops but brought the problems in B42. Armour is now stamped live onto small, empty shell objects at one op per frame plus two idle frames, with no binds and no <code>SaveAs</code>. A full tier-3 set on a dummy takes about 35–40 s at 47 fps, with a worst frame of 48–52 ms.</p>
     </div>
   </article>
 
@@ -913,7 +914,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Timers that persist across restarts silently fire early, or never, after a restart. With no visible cause and no warning before the restart, the last few minutes of game state are lost, along with any repair made in that window.</p></div>
-      <div><h4>Mitigation shipped</h4><p>A persistent game clock: seconds accumulated in the ledger, plus the uptime since boot, with older timestamps clamped to "now". Downtime doesn't count toward any timer. The ledger is saved to disk immediately after any one-shot repair, and a boot pass re-applies home repairs on its own.</p></div>
+      <div><h4>Mitigation shipped</h4><p>A persistent game clock: seconds accumulated in the ledger, plus the uptime since boot, with older timestamps clamped to "now". Downtime doesn't count toward any timer. The ledger is saved to disk immediately after any one-shot repair, and a boot pass re-applies home repairs on its own. One edge case showed up after a later restart: the Terrain Keeper logged "last full save 1000008593 s ago" (an edge case in the game's clock clamp) and ran a full terrain save right after boot. That was harmless on an empty server, but a full save freezes the server for 33–60 s (B19), so the edge case matters. Restarts themselves are tracked in B44.</p></div>
       <div><h4>Suggested fix</h4><p>Expose a real wall-clock time (for example <code>Time.unix</code>), correct the guide's "wall clock" label, and log or announce the reason for every server restart.</p></div>
     </div>
   </article>
@@ -938,14 +939,14 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       </table>
     </div>
     <dl class="w5">
-      <dt>Lesson</dt><dd>A bind has a large fixed cost (about 40–100 ms) and lands in a single frame, so "bake and bind" can't make runtime swaps smooth: pre-built objects have to be activated, not bound. The character code for the shells also brought the periodic ~700 ms idle freeze back, so it was reverted too.</dd>
+      <dt>Lesson</dt><dd>A bind has a large fixed cost (about 40–100 ms) and lands in a single frame, so "bake and bind" can't make runtime swaps smooth: pre-built objects have to be activated, not bound. The character code for the shells also brought the periodic ~700 ms idle freeze back, so it was reverted too. Thin, spread-out assets cost far more than their voxel count suggests: the 89k-voxel mace shell took 1.2–1.4 s to bind, against 414 ms for the solid 112k-voxel mace.</dd>
       <dt>When</dt><dd>When baking variants of scaled parts; the freeze appeared once the baked variants were wired into the character script.</dd>
       <dt>Where</dt><dd><code>VoxelData:SaveAs</code> on scaled VoxelData; asset handling for large numbers of voxel assets.</dd>
-      <dt>Why</dt><dd>The size follows from the scaled part's internal resolution (see B29 and B31). The freeze is not settled. An A/B test first tied it to the patch's in-script bake code (no freezes in about 7,000 frames once that code was removed, with or without the templates loaded), but the later shell code brought it back. The bind cost is engine-side and synchronous.</dd>
+      <dt>Why</dt><dd>The size follows from the scaled part's internal resolution (see B29 and B31). The bind cost is engine-side and synchronous. The freeze is not proven, but it correlates with heavy <code>SaveAs</code> use: both sessions that ran 75–111 bakes then showed a ~700 ms engine-side frame every ~8 s at idle (heap +2 MB each time), a Lua reload cleared it, and sessions that only bound assets never showed it.</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Baking trades a voxel-commit stall for disk, sync and streaming size, and here also for a periodic server-wide freeze. Neither runtime stamping (B29) nor baking is currently a clean way to give characters per-tier detail.</p></div>
-      <div><h4>Mitigation</h4><p>Both armour patches were reverted, and the 111 obsolete baked variants (329 MB) were deleted. Forging stays open; the next plan is live stamping onto small shells at one op per frame. Hollow crusts keep their three baked torso variants, which are bound once at pool time, never mid-fight.</p></div>
+      <div><h4>Mitigation</h4><p>Armour no longer binds or saves assets at all: it is stamped live onto small shells at one op per frame (47 fps, worst frame about 50 ms, over about 35 s per full set), and an idle server showed no freezes over 100 ms in 6,957 frames afterwards. The 111 baked variants (329 MB) and the 75 shell templates (60 MB) were deleted. Hollow crusts keep their three baked torso variants, which are bound once at pool time, never mid-fight.</p></div>
       <div><h4>Suggested fix</h4><p>Let <code>SaveAs</code> resample to a target resolution, or support instancing and sharing of voxel data between variants. Keep any periodic asset scan incremental, and expose its cost in the engine timers.</p></div>
     </div>
   </article>
@@ -963,6 +964,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Impact</h4><p>A server can't reach 60 fps even with no players, and the ~8 ms comes straight out of the thin headroom in B17. Together with B38 (idle SDK scripts), much of the frame budget is spent before any gameplay runs.</p></div>
       <div><h4>Mitigation</h4><p>None from game code. The only lever is fewer active objects, which the game pursues through pooling and inactive components (see What held up). A census found only 101 active objects left, so there is little more to cut.</p></div>
       <div><h4>Suggested fix</h4><p>Render the headless client only while a screenshot or agent capture is pending, or throttle it to a low rate, and show its cost separately in the engine timers.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b44">
+    <div class="rec-head"><span class="rec-id">B44</span><h3>The server restarts without warning or a reason</h3><span class="sev high">High</span><span class="conf">Why: unknown</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Everyone connected, and any game state not yet written to disk.</dd>
+      <dt>What</dt><dd>The live server restarted three times in one night with no warning and no reason given: at about 20:13, at about 22:24, and at about 01:10. Memory stood at 13.1 GB and 14 GB of 32 GB at the last two, so none of them looks like running out of memory. The 01:10 restart came during the first live forge measurement; repeating the same forge five minutes later ran to completion without one, so the trigger is unknown.</dd>
+      <dt>When</dt><dd>Apparently at random, under ordinary load.</dd>
+      <dt>Where</dt><dd>The server process or its host.</dd>
+      <dt>Why</dt><dd>Unknown. Nothing visible from inside the world, or through the CLI, records a cause.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Players are dropped, process-uptime clocks restart (B41), and everything since the last disk save is lost: the 22:24 restart reverted a world repair made minutes earlier. A game can't plan for restarts it can't see coming or explain.</p></div>
+      <div><h4>Mitigation</h4><p>The game assumes a restart can happen at any moment: a persistent game clock, an immediate ledger save after one-shot repairs, and boot passes that repair homes and replay the terrain journal. After the 01:10 restart the game clock (8,748 s against 204 s of uptime), the home re-seat, the dressed world, the Undercroft, lore and Omens all survived.</p></div>
+      <div><h4>Suggested fix</h4><p>Record the reason for every restart (crash, host maintenance, watchdog, deploy) where makers can read it, warn connected players before planned restarts, and give scripts a shutdown hook to flush state.</p></div>
     </div>
   </article>
 </section>
@@ -1027,11 +1044,13 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B39 (update)</td><td>Atlas confirmed capped at 5,000 MB; residual growth of ~7 MB/min watched</td><td>Monitoring</td></tr>
         <tr><td class="mono">B40</td><td>Parked rigs activated briefly, between fights, while being dressed</td><td>Shipped</td></tr>
         <tr><td class="mono">B29 (resolved)</td><td>Spawn spikes traced to voxel adds on scaled parts; crust baked into 3 variant assets, chips painted, pools paced. Ramp p99 508 → 60.9 ms, worst 893 → 73 ms; steady worst 84–94 → 51 ms</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B29 (open)</td><td>Forging armour on a player rig: 43.5 fps, worst 83 ms for ~6 s. Baked tiers tried and reverted (B42)</td><td>Open</td></tr>
+        <tr><td class="mono">B29 (forging)</td><td>Forging armour on a player rig: 43.5 fps, worst 83 ms for ~6 s; baked tiers tried and reverted (B42). Now live 1-op/frame stamping onto shells: 47 fps, worst 48–52 ms over ~35–40 s</td><td>Acceptable</td></tr>
         <tr><td class="mono">B29 (round 14)</td><td>Ramp p99 38.6 ms, worst 73 ms; steady 54.3 fps, p99 30.7 ms</td><td>Measured</td></tr>
         <tr><td class="mono">B42</td><td>Baked-armour character patch reverted (58.2 fps, worst 28 ms after); assets kept for relinking</td><td>Reverted</td></tr>
         <tr><td class="mono">B42 (update)</td><td>Freeze traced to the in-script bake code, now removed: 0 freezes in ~7,000 frames with and without templates. Baked binds still 100–500 ms, so armour shells are in progress</td><td>Superseded below</td></tr>
-        <tr><td class="mono">B42 (shells)</td><td>Armour shells measured at 40–360 ms per bind; shell code re-introduced the periodic freeze and was reverted; 111 obsolete variants (329 MB) deleted. Next: live 1-op/frame stamping onto shells</td><td>Reverted; forging open</td></tr>
+        <tr><td class="mono">B42 (shells)</td><td>Armour shells measured at 40–360 ms per bind; shell code re-introduced the periodic freeze and was reverted; 111 obsolete variants (329 MB) deleted. Next: live 1-op/frame stamping onto shells</td><td>Reverted</td></tr>
+        <tr><td class="mono">B42 (round 5d)</td><td>No binds or <code>SaveAs</code> for armour; idle shows 0 freezes over 100 ms in 6,957 frames; 75 shell templates (60 MB) deleted. Freeze correlates with heavy <code>SaveAs</code> use (unproven)</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono">B44</td><td>Restart-proof state: persistent clock, immediate ledger saves, boot repair passes; all survived the 01:10 restart</td><td>Process</td></tr>
         <tr><td class="mono">B29 (round 16)</td><td>Hollow, Body and Beacon components inactive, driven by one manager: steady 54.7 fps, worst 32 ms, no frames over 33 ms; script time 8.66 → 4.15 ms</td><td>Shipped, measured</td></tr>
         <tr><td class="mono">B43</td><td>None possible in game code; fewer active objects</td><td>Reported</td></tr>
         <tr><td class="mono">B41</td><td>Persistent game clock in the ledger; immediate ledger save after one-shot repairs; boot-time home repair</td><td>Shipped</td></tr>
