@@ -778,14 +778,14 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div class="rec-head"><span class="rec-id">B35</span><h3>A coding harness can't run automated playtests</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Agents and makers who build through the CLI and want to test gameplay without a human at the keyboard.</dd>
-      <dt>What</dt><dd>Two problems. First, over about 10 minutes, roughly 1 in 3 CLI <code>run-lua</code> and <code>errors</code> calls returned "fetch failed" with no HTTP status, then worked on retry. Second, a native client launched with <code>virtualmatter open</code> joins in edit mode: its player character is spawned but not simulated, so neither a client-side <code>charCtrl:setPosition</code> nor server-side writes move it.</dd>
+      <dt>What</dt><dd>Two problems. First, over about 10 minutes, roughly 1 in 3 CLI <code>run-lua</code> and <code>errors</code> calls returned "fetch failed" with no HTTP status, then worked on retry. Second, a native client launched with <code>virtualmatter open</code> joins in edit mode: its player character is spawned but not simulated, so neither a client-side <code>charCtrl:setPosition</code> nor server-side writes move it.<br><br><b>Update (QA):</b> after a server restart, about 1 in 6 read-only <code>run-lua</code> calls (0.1–1 s of work each) returned only "fetch failed": no HTTP status and no engine error, unlike the 504 timeout. An identical retry 15–20 s later succeeded every time. There is no way to tell whether the failed call's code ran.</dd>
       <dt>When</dt><dd>The fetch failures were intermittent, during normal building. The edit-mode client happens on every CLI launch.</dd>
       <dt>Where</dt><dd>The CLI's connection to the session; the native client's launch mode.</dd>
       <dt>Why</dt><dd>The CLI-launched client opens the editor view with a fly camera rather than play mode. The cause of the fetch failures isn't visible from outside the platform.</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Boss fights and traversal (for example, falling into the Undercroft vault) can't be playtested automatically from a coding harness, so they need a human playtester. Flaky calls also make long verification scripts fail partway through.</p></div>
-      <div><h4>Mitigation</h4><p>A retry wrapper for fetch failures. Boss logic is verified in offline harnesses plus server-side state probes, with the final feel check left to a human.</p></div>
+      <div><h4>Mitigation</h4><p>A retry wrapper with backoff for fetch failures. For Lua that changes the world, read back its effect before retrying, the same rule as for a 504. Boss logic is verified in offline harnesses plus server-side state probes, with the final feel check left to a human.</p></div>
       <div><h4>Suggested fix</h4><p>Add an <code>open --play</code> mode (or a headless play client) whose character can be driven from <code>run-lua</code>, and have the CLI retry transient network failures itself and report them with a status.</p></div>
     </div>
   </article>
@@ -840,7 +840,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B20 (update)</td><td>Procedural props (oil drums) found empty after a restart; rebuild on boot when the VoxelData is empty, or save props as assets</td><td>Found; fix proposed</td></tr>
         <tr><td class="mono">B33 (update)</td><td>Hit-stop and directional damage vignette deployed</td><td>Shipped, verified server-side</td></tr>
         <tr><td class="mono">B34</td><td>Wait for the <code>.zma</code> or retry before attaching a new script</td><td>Process</td></tr>
-        <tr><td class="mono">B35</td><td>Retry wrapper for fetch failures; boss logic checked in offline harnesses and server-side probes; human playtests for feel</td><td>Process</td></tr>
+        <tr><td class="mono">B35</td><td>Retry with backoff for fetch failures (read back state before retrying world-changing Lua); boss logic checked in offline harnesses and server-side probes; human playtests for feel</td><td>Process</td></tr>
       </tbody>
     </table>
   </div>
