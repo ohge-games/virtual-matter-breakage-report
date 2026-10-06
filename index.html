@@ -193,6 +193,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B39</td><td><span class="sev low">Low</span></td><td><a href="#b39">Server memory climbs on an idle, empty server</a></td><td class="num">Atlas capped at 5,000 MB; +7 MB/min after</td></tr>
         <tr><td class="mono">B40</td><td><span class="sev low">Low</span></td><td><a href="#b40">Inactive objects ignore forced raycasts</a></td><td>Forced ray returns nil</td></tr>
         <tr><td class="mono">B41</td><td><span class="sev high">High</span></td><td><a href="#b41"><code>AE:GetDebugTime()</code> restarts with the server process</a></td><td>Every server restart</td></tr>
+        <tr><td class="mono">B42</td><td><span class="sev med">Medium</span></td><td><a href="#b42">Baked rig variants are huge; a periodic freeze came with them</a></td><td class="num">329 MB for 111 variants; ~700 ms every 8.4 s</td></tr>
       </tbody>
     </table>
   </div>
@@ -713,11 +714,13 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
             <tr><td>Round 12, steady siege (22 Hollows)</td><td class="num">53.9</td><td class="num">25 ms</td><td class="num">–</td><td class="num">76 ms</td><td>The siege no longer starves at 16 Hollows</td></tr>
             <tr><td><b>Round 13, ramp-up</b></td><td class="num"><b>53.3</b></td><td class="num">–</td><td class="num"><b>60.9 ms</b></td><td class="num"><b>73 ms</b></td><td>Crust baked into assets: spawns do no voxel ops. The only frames over 100 ms are the bosses' own staged builds at spawn, plus a 25 ms ledger encode</td></tr>
             <tr><td><b>Round 13, steady</b> (22 Hollows + Colossus + Matron + siege)</td><td class="num"><b>53.4</b></td><td class="num">–</td><td class="num"><b>30.5 ms</b></td><td class="num"><b>51 ms</b></td><td>Baseline steady worst was 84–94 ms; the pool trims back to 14 afterwards</td></tr>
+            <tr><td>Round 14, ramp-up (no attribution wrappers)</td><td class="num">53.7</td><td class="num">–</td><td class="num">38.6 ms</td><td class="num">73 ms</td><td></td></tr>
+            <tr><td>Round 14, steady (23 Hollows + bosses + siege)</td><td class="num">54.3</td><td class="num">22.5 ms</td><td class="num">30.7 ms</td><td class="num">123 ms</td><td>Script cost per frame: Hollow 3.3 ms (22 instances), Body 1.2 ms, Game 1.0 ms. The next round targets the last ~3 ms</td></tr>
           </tbody>
         </table>
       </div>
       <p><b>Spike attribution (resolved).</b> Wrapping 1,436 server functions during the ramp showed that every 300–716 ms frame was a spawn running the Hollow crust builder: 7–23 <code>Vox:Add</code> rubble plates on the torso part, which has scale 0.19. Lua took only 12–25 ms of that; the rest was the engine committing voxels. At scale 0.19, a 0.3 m plate is about 140 times as many voxels as the same plate at scale 1 (see the scaled-part op costs under Measured limits). The fix was to bake the crust into three torso variant assets with <code>VoxelData:SaveAs</code>, so spawns do no voxel ops at all, and to have hits paint chips instead of carving them. Pool part binds also showed up (36–72 ms for Hollows and 40–80 ms for Bulwarks), and are now paced. One 469 ms engine-side frame with no voxel ops in round 12 is still unexplained.</p>
-      <p><b>Still open:</b> forging armour onto a player rig still hitches: 43.5 fps, with 36 frames over 50 ms and a worst frame of 83 ms, for about 6 s. A bake is planned.</p>
+      <p><b>Still open:</b> forging armour onto a player rig still hitches: 43.5 fps, with 36 frames over 50 ms and a worst frame of 83 ms, for about 6 s. Every voxel op on a part at about 0.19 scale costs at least 6.6 ms of engine commit, typically 7–30 ms. Pre-baked armour tiers removed the voxel ops but brought the asset size and periodic freeze in B42, so that patch was reverted and forging remains open.</p>
     </div>
   </article>
 
@@ -912,6 +915,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Expose a real wall-clock time (for example <code>Time.unix</code>), correct the guide's "wall clock" label, and log or announce the reason for every server restart.</p></div>
     </div>
   </article>
+
+  <article class="record med" id="b42">
+    <div class="rec-head"><span class="rec-id">B42</span><h3>Baked rig variants are huge, and a periodic freeze appeared with them</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Games that bake cosmetic detail into rig assets to avoid runtime voxel cost (B29), their makers' mirrors, and every client that streams the assets.</dd>
+      <dt>What</dt><dd><code>VoxelData:SaveAs</code> on a scaled rig part stores the part at its fine internal resolution, so every baked variant is a full copy. Mace tiers came to about 7 MB each, and the 111 armour and weapon variants to 329 MB of <code>.am</code> assets, all of which sync to the maker's mirror and have to stream to clients. Separately, the patch that switched characters over to the baked armour introduced a freeze of about 700 ms every 8.4 s on an idle server, with the heap growing about 2 MB per freeze and no game Lua running inside it. Reverting that patch fixed it at once (58.2 fps, worst frame 28 ms).</dd>
+      <dt>When</dt><dd>When baking variants of scaled parts; the freeze appeared once the baked variants were wired into the character script.</dd>
+      <dt>Where</dt><dd><code>VoxelData:SaveAs</code> on scaled VoxelData; asset handling for large numbers of voxel assets.</dd>
+      <dt>Why</dt><dd>The size follows from the scaled part's internal resolution (see B29 and B31). The freeze is under investigation; the suspicion is a periodic engine scan of the asset list that grows with the number of large assets.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Baking trades a voxel-commit stall for disk, sync and streaming size, and here also for a periodic server-wide freeze. Neither runtime stamping (B29) nor baking is currently a clean way to give characters per-tier detail.</p></div>
+      <div><h4>Mitigation</h4><p>The armour patch was reverted; the baked assets stay on disk so they can be relinked once the freeze is understood. Hollow crusts use only three baked torso variants, which showed no freeze.</p></div>
+      <div><h4>Suggested fix</h4><p>Let <code>SaveAs</code> resample to a target resolution, or support instancing and sharing of voxel data between variants. Keep any periodic asset scan incremental, and expose its cost in the engine timers.</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -974,7 +993,9 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B39 (update)</td><td>Atlas confirmed capped at 5,000 MB; residual growth of ~7 MB/min watched</td><td>Monitoring</td></tr>
         <tr><td class="mono">B40</td><td>Parked rigs activated briefly, between fights, while being dressed</td><td>Shipped</td></tr>
         <tr><td class="mono">B29 (resolved)</td><td>Spawn spikes traced to voxel adds on scaled parts; crust baked into 3 variant assets, chips painted, pools paced. Ramp p99 508 → 60.9 ms, worst 893 → 73 ms; steady worst 84–94 → 51 ms</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B29 (open)</td><td>Forging armour on a player rig: 43.5 fps, worst 83 ms for ~6 s; bake planned</td><td>Open</td></tr>
+        <tr><td class="mono">B29 (open)</td><td>Forging armour on a player rig: 43.5 fps, worst 83 ms for ~6 s. Baked tiers tried and reverted (B42)</td><td>Open</td></tr>
+        <tr><td class="mono">B29 (round 14)</td><td>Ramp p99 38.6 ms, worst 73 ms; steady 54.3 fps, p99 30.7 ms</td><td>Measured</td></tr>
+        <tr><td class="mono">B42</td><td>Baked-armour character patch reverted (58.2 fps, worst 28 ms after); assets kept for relinking; freeze under investigation</td><td>Reverted, investigating</td></tr>
         <tr><td class="mono">B41</td><td>Persistent game clock in the ledger; immediate ledger save after one-shot repairs; boot-time home repair</td><td>Shipped</td></tr>
       </tbody>
     </table>
@@ -1011,6 +1032,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td>Client particles</td><td class="num">500 / 2k / 8k</td><td class="num">29.2 / 26.2 / 12.7 fps</td><td>Broke (B9)</td></tr>
         <tr><td>Voxel op on a 0.2-scale part</td><td class="num">Add plate 0.28 m / 0.15 m</td><td class="num">+114 ms / +33 ms frame time</td><td>Expensive (B29)</td></tr>
         <tr><td>Voxel op on a 0.2-scale part</td><td class="num">Paint plate 0.28 m / remove sphere 0.24 m</td><td class="num">+17 ms / +64 ms frame time</td><td>Paint is the cheap option</td></tr>
+        <tr><td>Any voxel op on a ~0.19-scale part</td><td class="num">1 op</td><td class="num">≥6.6 ms engine commit, 7–30 ms typical</td><td>Expensive (B29)</td></tr>
         <tr><td>Same Add on a scale-1 object</td><td class="num">Plate 0.28 m</td><td class="num">+0 ms</td><td>Held</td></tr>
         <tr><td>Bind a template rig part</td><td class="num">1 part</td><td class="num">≈60 ms Lua</td><td>Expensive (B29)</td></tr>
       </tbody>
@@ -1028,7 +1050,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div><b>Persistence</b><p>Player homes, fuel levels and quest state survived Lua reloads through a ledger serialized as Lua-literal strings.</p></div>
     <div><b>Live building</b><p>A 160 m map, five segmented character rigs and ten tutorial steps were all built through the CLI without opening the editor.</p></div>
     <div><b>Runtime voxel detail on characters</b><p>Worn armour is stamped as voxels straight into each player's own copies of the rig parts, so it adds no objects. Each plate is an oriented box built from the part's transform at the moment its edit runs, which keeps it correct on a moving character. Verified on a live dummy at tiers 1 and 3. Caveat (B31): measure the live rig; offline mocks got the part scale wrong.</p></div>
-    <div><b>Baking runtime detail into assets</b><p>Stamping a template copy once and calling <code>VoxelData:SaveAs</code> stores the stamps in a new asset. Bound copies measured 22–26k voxels against 15.9k plain, so the detail survives, and spawning from the baked variants costs no voxel ops. It is now used live for Hollow crusts. Cosmetic detail on scaled rigs should be baked, not stamped at runtime.</p></div>
+    <div><b>Baking runtime detail into assets</b><p>Stamping a template copy once and calling <code>VoxelData:SaveAs</code> stores the stamps in a new asset. Bound copies measured 22–26k voxels against 15.9k plain, so the detail survives, and spawning from the baked variants costs no voxel ops. It is now used live for Hollow crusts. Cosmetic detail on scaled rigs should be baked, not stamped at runtime, but baked variants are large (B42), so keep their number small.</p></div>
   </div>
 </section>
 
