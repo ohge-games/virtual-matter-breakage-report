@@ -196,6 +196,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B42</td><td><span class="sev med">Medium</span></td><td><a href="#b42">Baked rig variants are huge; a periodic freeze came with them</a></td><td class="num">329 MB for 111 variants; any bind 40–360 ms</td></tr>
         <tr><td class="mono">B44</td><td><span class="sev high">High</span></td><td><a href="#b44">The server restarts without warning or a reason</a></td><td>4 restarts in one night; 3 during scaled-part stamping</td></tr>
         <tr><td class="mono">B45</td><td><span class="sev high">High</span></td><td><a href="#b45">After a server restart, sync silently fails every push</a></td><td>HTTP 403 on every push; 3 deploys lost</td></tr>
+        <tr><td class="mono">B46</td><td><span class="sev high">High</span></td><td><a href="#b46">Server Lua has no stable per-user id</a></td><td>7 of 7 records were placeholders</td></tr>
         <tr><td class="mono">B43</td><td><span class="sev med">Medium</span></td><td><a href="#b43">The server renders a headless client every frame</a></td><td class="num">~8 ms per frame; ~58 fps at idle</td></tr>
       </tbody>
     </table>
@@ -999,6 +1000,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Have <code>sync</code> re-authenticate on a 403, and exit or print a loud error if it can't, instead of continuing silently.</p></div>
     </div>
   </article>
+
+  <article class="record high" id="b46">
+    <div class="rec-head"><span class="rec-id">B46</span><h3>Server Lua has no stable per-user id</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Any game that keeps per-player progress: characters, inventories, homes, unlocks.</dd>
+      <dt>What</dt><dd>Server Lua gets no stable user id. The only identity is the client-supplied chat name, and it arrives by RPC <i>after</i> <code>clientConnected</code>. Ashlight keyed characters on the name it had at join time, which at that moment was a placeholder ("Wanderer &lt;connection id&gt;"). All 7 live character records turned out to be Wanderer-N, so no player's progress had ever survived a reconnect. In a browser, a signed-in maker's chat name is their platform handle; anonymous visitors get a random "Adjective Animal" name on each visit.</dd>
+      <dt>When</dt><dd>On every join; the chat name took 11 s to arrive for a native client.</dd>
+      <dt>Where</dt><dd>The join path (<code>clientConnected</code>) and the chat-name RPC.</dd>
+      <dt>Why</dt><dd>Identity is a display name the client sends after connecting, not an account id the server knows at connect time.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Persistent progress silently breaks unless a game knows to wait for the name, and even then it rests on a name the client controls. Anonymous visitors can't keep progress at all, and two players with the same handle would share a record.</p></div>
+      <div><h4>Mitigation shipped</h4><p>The game holds each join until the chat name arrives (up to 20 s) and refuses to save records under placeholder or guest names. Verified with a native client: it waited 11 s, then joined under its chat name. Playtesters are asked to sign in so their character persists.</p></div>
+      <div><h4>Suggested fix</h4><p>Pass a stable, opaque per-account id (and the display name) to server Lua at <code>clientConnected</code>, with a flag for anonymous sessions.</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -1073,6 +1090,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B41</td><td>Persistent game clock in the ledger; immediate ledger save after one-shot repairs; boot-time home repair</td><td>Shipped</td></tr>
         <tr><td class="mono">B44 (update)</td><td>Fourth restart during background Hollow dressing (25.1 fps, worst 596 ms beforehand); dressing reverted (59.7 fps, worst 17 ms); continuous stamping on scaled parts shelved</td><td>Shelved</td></tr>
         <tr><td class="mono">B45</td><td>Restart <code>sync</code> after every server restart; confirm "pushed" lines per deploy</td><td>Process</td></tr>
+        <tr><td class="mono">B46</td><td>Joins held until the chat name arrives (up to 20 s); records refused for guest names; playtesters sign in</td><td>Shipped, verified</td></tr>
       </tbody>
     </table>
   </div>
