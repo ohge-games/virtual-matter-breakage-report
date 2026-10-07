@@ -652,7 +652,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Animation, lighting and UI can only be judged in a visible real client, so verification takes longer and some results are marked unverified.</p></div>
-      <div><h4>Mitigation</h4><p>Geometry is checked with CLI screenshots. UI and lighting are checked in a visible browser client, with player actions driven through client-side Lua and RPCs.</p></div>
+      <div><h4>Mitigation</h4><p>Geometry is checked with CLI screenshots. UI and lighting are checked in a visible browser client, with player actions driven through client-side Lua and RPCs. Workaround found later: <code>virtualmatter screenshot --client &lt;id&gt;</code> captures through a real connected client (for example the native client opened by the CLI) with the lighting pass on, which sidesteps the headless client running with SSAO and the custom light pass off.</p></div>
       <div><h4>Suggested fix</h4><p>Allow screenshots from a chosen connected client (<code>--client &lt;id&gt;</code>), keep the custom shader passes, and accept <code>--target</code> on hierarchy roots.</p></div>
     </div>
   </article>
@@ -1049,7 +1049,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B9</td><td>Particle budgets per effect; no particles in the server's headless client</td><td>Shipped</td></tr>
         <tr><td class="mono">B23</td><td>Event-queued key input in the player script</td><td>Shipped, verified live</td></tr>
         <tr><td class="mono">B24</td><td>Audio module re-indexes on asset sync and falls back to built-in sounds</td><td>Shipped</td></tr>
-        <tr><td class="mono">B26</td><td>Server rigs pose at 4 Hz in the headless client; visual checks done in a visible browser client</td><td>Process</td></tr>
+        <tr><td class="mono">B26</td><td>Server rigs pose at 4 Hz in the headless client; visual checks done in a visible browser client, or with <code>screenshot --client &lt;id&gt;</code> through a real client with lighting on</td><td>Process</td></tr>
         <tr><td class="mono">B27</td><td>Persisted timers moved off <code>Time.time</code>; now on the persistent game clock (B41)</td><td>Shipped</td></tr>
         <tr><td class="mono">B28</td><td>Terrain reworks scheduled for an empty server; server-side ray audits; floating props found and grounded (a dead tree hung 35 m up, and an oil drum 1.3 m up after the Pit rim was reshaped)</td><td>Process + fixed</td></tr>
         <tr><td class="mono">Arena</td><td>Pit rim reshaped into crags; stair access to all three high-ground shelves verified with a 0.5 m-step flood fill in both directions</td><td>Verified live</td></tr>
