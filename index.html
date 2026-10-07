@@ -197,6 +197,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B44</td><td><span class="sev high">High</span></td><td><a href="#b44">The server restarts without warning or a reason</a></td><td>4 restarts in one night; 3 during scaled-part stamping</td></tr>
         <tr><td class="mono">B45</td><td><span class="sev high">High</span></td><td><a href="#b45">After a server restart, sync silently fails every push</a></td><td>HTTP 403 on every push; 3 deploys lost</td></tr>
         <tr><td class="mono">B46</td><td><span class="sev high">High</span></td><td><a href="#b46">Server Lua has no stable per-user id</a></td><td>7 of 7 records were placeholders</td></tr>
+        <tr><td class="mono">B47</td><td><span class="sev med">Medium</span></td><td><a href="#b47"><code>type()</code> of a Vec3 returns "Vec3", not "userdata"</a></td><td>Every guarded vector dropped</td></tr>
         <tr><td class="mono">B43</td><td><span class="sev med">Medium</span></td><td><a href="#b43">The server renders a headless client every frame</a></td><td class="num">~8 ms per frame; ~58 fps at idle</td></tr>
       </tbody>
     </table>
@@ -1016,6 +1017,22 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Suggested fix</h4><p>Pass a stable, opaque per-account id (and the display name) to server Lua at <code>clientConnected</code>, with a flag for anonymous sessions.</p></div>
     </div>
   </article>
+
+  <article class="record med" id="b47">
+    <div class="rec-head"><span class="rec-id">B47</span><h3><code>type()</code> of a Vec3 returns "Vec3", not "userdata"</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone who validates arguments with standard Lua type checks, and anyone who tests against mocks that use plain tables for vectors.</dd>
+      <dt>What</dt><dd>In this engine, Lua's <code>type(v)</code> on a Vec3 returns "Vec3". Standard Lua would report a host object as "userdata", and this isn't documented. Two guards written as <code>type(pos) ~= "userdata" and type(pos) ~= "table"</code> and <code>type(v) == "userdata"</code> therefore rejected every real vector, silently.</dd>
+      <dt>When</dt><dd>2026-10-07, found by a live server-side smoke test that dumped the guards (<code>type=Vec3</code>); the bug had been live since the pings shipped.</dd>
+      <dt>Where</dt><dd>Ashlight's pings and client combat effects; the engine's <code>type()</code> for Vec3 (and possibly other host classes).</dd>
+      <dt>Why</dt><dd>The engine overrides <code>type()</code> to return the host class name, and neither <code>apiEmmyAtomontage.lua</code> nor the skills say so. Offline mocks used table vectors, so their tests passed.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Pings (<kbd>3</kbd>) never broadcast to anyone, and hit, parry and death effects fell back to default positions, with no error raised anywhere.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Vectors are duck-typed instead: a value counts as a vector if <code>.x</code>, <code>.y</code> and <code>.z</code> are numbers. The re-run smoke test passed 16 of 16, including the ping broadcast.</p></div>
+      <div><h4>Suggested fix</h4><p>Document the behaviour in <code>apiEmmyAtomontage.lua</code> and the scripting skill, or make <code>type()</code> return "userdata" as standard Lua does and expose the class through <code>getmetatable</code> or a <code>typeof</code> helper.</p></div>
+    </div>
+  </article>
 </section>
 
 <section>
@@ -1091,6 +1108,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B44 (update)</td><td>Fourth restart during background Hollow dressing (25.1 fps, worst 596 ms beforehand); dressing reverted (59.7 fps, worst 17 ms); continuous stamping on scaled parts shelved</td><td>Shelved</td></tr>
         <tr><td class="mono">B45</td><td>Restart <code>sync</code> after every server restart; confirm "pushed" lines per deploy</td><td>Process</td></tr>
         <tr><td class="mono">B46</td><td>Joins held until the chat name arrives (up to 20 s); records refused for guest names; playtesters sign in</td><td>Shipped, verified</td></tr>
+        <tr><td class="mono">B47</td><td>Vectors duck-typed on .x/.y/.z; Reach smoke test 16/16 including the ping broadcast</td><td>Shipped, verified</td></tr>
       </tbody>
     </table>
   </div>
