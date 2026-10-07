@@ -194,10 +194,13 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B40</td><td><span class="sev low">Low</span></td><td><a href="#b40">Inactive objects ignore forced raycasts</a></td><td>Forced ray returns nil</td></tr>
         <tr><td class="mono">B41</td><td><span class="sev high">High</span></td><td><a href="#b41"><code>AE:GetDebugTime()</code> restarts with the server process</a></td><td>Every server restart</td></tr>
         <tr><td class="mono">B42</td><td><span class="sev med">Medium</span></td><td><a href="#b42">Baked rig variants are huge; a periodic freeze came with them</a></td><td class="num">329 MB for 111 variants; any bind 40–360 ms</td></tr>
-        <tr><td class="mono">B44</td><td><span class="sev high">High</span></td><td><a href="#b44">The server restarts without warning or a reason</a></td><td>4 restarts in one night; 3 during scaled-part stamping</td></tr>
+        <tr><td class="mono">B44</td><td><span class="sev high">High</span></td><td><a href="#b44">The server restarts without warning or a reason</a></td><td>6 restarts in ~12 h; 3 during scaled-part stamping</td></tr>
         <tr><td class="mono">B45</td><td><span class="sev high">High</span></td><td><a href="#b45">After a server restart, sync silently fails every push</a></td><td>HTTP 403 on every push; 3 deploys lost</td></tr>
         <tr><td class="mono">B46</td><td><span class="sev high">High</span></td><td><a href="#b46">Server Lua has no stable per-user id</a></td><td>7 of 7 records were placeholders</td></tr>
         <tr><td class="mono">B47</td><td><span class="sev med">Medium</span></td><td><a href="#b47"><code>type()</code> of a Vec3 returns "Vec3", not "userdata"</a></td><td>Every guarded vector dropped</td></tr>
+        <tr><td class="mono">B48</td><td><span class="sev high">High</span></td><td><a href="#b48"><code>virtualmatter sync</code> leaves orphans and pushes things it shouldn't</a></td><td>3 syncs at once; 370 MB pulls; 2 Lua resets</td></tr>
+        <tr><td class="mono">B49</td><td><span class="sev med">Medium</span></td><td><a href="#b49">A force-killed client stays connected for 1–2 minutes</a></td><td>Ghost in <code>GetClients()</code> ~1–2 min</td></tr>
+        <tr><td class="mono">B50</td><td><span class="sev low">Low</span></td><td><a href="#b50">Client transform race on NPCs</a></td><td>NPC drawn ~5× too big</td></tr>
         <tr><td class="mono">B43</td><td><span class="sev med">Medium</span></td><td><a href="#b43">The server renders a headless client every frame</a></td><td class="num">~8 ms per frame; ~58 fps at idle</td></tr>
       </tbody>
     </table>
@@ -363,7 +366,7 @@ end  -- 6 never progress</code></pre></div>
     <div class="rec-head"><span class="rec-id">B9</span><h3>The documented particle cap isn't enforced</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Players on lower-end clients during heavy effects.</dd>
-      <dt>What</dt><dd>The docs say "max 500 particles". The client accepted 500, 2,000 and 8,000 in a single call. Client fps went from about 34–43 to 29.2 at 500, 26.2 at 2,000 (minimum 15.7) and 12.7 at 8,000 (minimum 5.4).</dd>
+      <dt>What</dt><dd>The docs say "max 500 particles". The client accepted 500, 2,000 and 8,000 in a single call. Client fps went from about 34–43 to 29.2 at 500, 26.2 at 2,000 (minimum 15.7) and 12.7 at 8,000 (minimum 5.4).<br><br><b>Update:</b> a client profile during play showed the SDK's own Particle Updater script costing about 50 µs per live particle: 11.5 ms of the frame at 219 particles. Game-side caps (200, 140 or 80 by graphics tier, 40 for ambient effects) brought client frames from about 41.6 ms to 28–39 ms together with lower shadow quality.</dd>
       <dt>When</dt><dd>Immediately, on the client that spawns them.</dd>
       <dt>Where</dt><dd><code>Editor Tools/Particles.lua</code> <code>addParticle</code> on the client.</dd>
       <dt>Why</dt><dd>No cap or eviction exists, and the per-particle simulation runs in Lua.</dd>
@@ -722,6 +725,8 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
             <tr><td>Round 14, ramp-up (no attribution wrappers)</td><td class="num">53.7</td><td class="num">–</td><td class="num">38.6 ms</td><td class="num">73 ms</td><td></td></tr>
             <tr><td>Round 14, steady (23 Hollows + bosses + siege)</td><td class="num">54.3</td><td class="num">22.5 ms</td><td class="num">30.7 ms</td><td class="num">123 ms</td><td>Script cost per frame: Hollow 3.3 ms (22 instances), Body 1.2 ms, Game 1.0 ms. The next round targets the last ~3 ms</td></tr>
             <tr><td><b>Round 16 + inactive components, steady</b> (22 Hollows + bosses + siege)</td><td class="num"><b>54.7</b></td><td class="num"><b>24.6 ms</b></td><td class="num"><b>30.3 ms</b></td><td class="num"><b>32 ms</b></td><td>No frames over 33 ms. Hollow, Body and Beacon server components set inactive and driven by one manager; game script time 8.66 → 4.15 ms per frame</td></tr>
+            <tr><td>After rounds 17–18, before the fix (22–23 Hollows + Matron + Colossus + siege)</td><td class="num">53.8–54.4</td><td class="num">–</td><td class="num">32–34 ms</td><td class="num">64–102 ms</td><td>Script time only 2.5 ms; the spikes were the pool building spare rigs mid-fight once the group bonus used every rig</td></tr>
+            <tr><td><b>After the pool fix</b> (no new rigs while 18+ Hollows are out)</td><td class="num"><b>56.0–56.1</b></td><td class="num"><b>23.7 ms</b></td><td class="num"><b>29 ms</b></td><td class="num"><b>36–37 ms</b></td><td>No frames over 50 ms; peak load settles at 19 Hollows instead of 22</td></tr>
           </tbody>
         </table>
       </div>
@@ -885,7 +890,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>An idle world gains gigabytes of memory, so its footprint depends on how long it has been up rather than on what players are doing. If the plateau doesn't hold, a long-running world eventually runs out of memory.</p></div>
-      <div><h4>Mitigation</h4><p>The atlas is confirmed capped; the residual growth is still being watched. Nothing in game code touches either.</p></div>
+      <div><h4>Mitigation</h4><p>The atlas is confirmed capped; the residual growth is still being watched. Nothing in game code touches either. With sessions running, memory grew faster: 13.2 GB after a restart to 16.7 GB 30 minutes later (limit 32 GB).</p></div>
       <div><h4>Suggested fix</h4><p>Cap the atlas with a documented, configurable budget, and expose its size and eviction counts through <code>Server:GetMemoryUsage()</code>.</p></div>
     </div>
   </article>
@@ -974,8 +979,8 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div class="rec-head"><span class="rec-id">B44</span><h3>The server restarts without warning or a reason</h3><span class="sev high">High</span><span class="conf">Why: unknown</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Everyone connected, and any game state not yet written to disk.</dd>
-      <dt>What</dt><dd>The live server restarted three times in one night with no warning and no reason given: at about 20:13, at about 22:24, and at about 01:10. Memory stood at 13.1 GB and 14 GB of 32 GB at the last two, so none of them looks like running out of memory. The 01:10 restart came during the first live forge measurement; repeating the same forge five minutes later ran to completion without one, so the trigger is unknown.<br><br><b>Update:</b> a fourth restart came at about 01:35 (uptime reset to 46 s), while a background job was stamping small voxel ops onto pooled Hollow rig parts (scale about 0.19) at one op every three frames. Just before it, that "idle" dressing measured 25.1 fps, an average update of 38.9 ms, 32 frames over 50 ms and a worst frame of 596 ms; an offline mock had predicted about 8 ms per op frame. Three of the four restarts happened during live voxel stamping on scaled rig parts or shells: at about 22:24 (the first armour stamping), 01:10 (a forge) and 01:35 (Hollow dressing).</dd>
-      <dt>When</dt><dd>Three of four during sustained voxel stamping on scaled rig parts; one (about 20:13) under ordinary load.</dd>
+      <dt>What</dt><dd>The live server restarted three times in one night with no warning and no reason given: at about 20:13, at about 22:24, and at about 01:10. Memory stood at 13.1 GB and 14 GB of 32 GB at the last two, so none of them looks like running out of memory. The 01:10 restart came during the first live forge measurement; repeating the same forge five minutes later ran to completion without one, so the trigger is unknown.<br><br><b>Update:</b> a fourth restart came at about 01:35 (uptime reset to 46 s), while a background job was stamping small voxel ops onto pooled Hollow rig parts (scale about 0.19) at one op every three frames. Just before it, that "idle" dressing measured 25.1 fps, an average update of 38.9 ms, 32 frames over 50 ms and a worst frame of 596 ms; an offline mock had predicted about 8 ms per op frame. Three of the four restarts happened during live voxel stamping on scaled rig parts or shells: at about 22:24 (the first armour stamping), 01:10 (a forge) and 01:35 (Hollow dressing).<br><br><b>Update:</b> two more restarts came the next morning, with no stamping running: at 07:22, while a playtester in a browser walked from the tutorial island to the hub (gameplay had been very choppy first, and no Lua errors preceded it), and at 07:58 with a test client connected. At that point three orphaned <code>sync</code> processes were running at once and pulling the 370 MB terrain in parallel on every terrain save (B48). That is a likely contributor, but it is unproven.</dd>
+      <dt>When</dt><dd>Three of six during sustained voxel stamping on scaled rig parts; two the next morning while orphaned syncs were downloading the terrain (B48); one (about 20:13) under ordinary load.</dd>
       <dt>Where</dt><dd>The server process or its host.</dd>
       <dt>Why</dt><dd>Unknown. Nothing visible from inside the world, or through the CLI, records a cause. The link to stamping on scaled parts is a correlation, not proof: a repeat of the 01:10 forge did not crash.</dd>
     </dl>
@@ -993,7 +998,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <dt>What</dt><dd>After the 01:35 restart (B44), the long-running <code>sync</code> process started failing every push with HTTP 403 and kept running as if nothing had happened. Three deploys looked done locally (the files compared identical to the staged copies) but never reached the server. Restarting <code>sync</code> fixed it.</dd>
       <dt>When</dt><dd>After a server restart, until <code>sync</code> is restarted.</dd>
       <dt>Where</dt><dd>The CLI's <code>sync</code> command and its session with the server.</dd>
-      <dt>Why</dt><dd>Inferred: <code>sync</code> keeps a session that the restart invalidates, and it neither renews the session nor stops on the 403.</dd>
+      <dt>Why</dt><dd>Inferred: <code>sync</code> keeps a session that the restart invalidates, and it neither renews the session nor stops on the 403. Some of these failures may have come from an older, orphaned <code>sync</code> process that was still running (B48).</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Deploys silently don't happen. A local check that the file was written (the deploy step's <code>cmp</code>) passes, so the maker believes the world is running code it isn't. Combined with B44's unannounced restarts, any long session can lose deploys without noticing.</p></div>
@@ -1031,6 +1036,60 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Impact</h4><p>Pings (<kbd>3</kbd>) never broadcast to anyone, and hit, parry and death effects fell back to default positions, with no error raised anywhere.</p></div>
       <div><h4>Mitigation shipped</h4><p>Vectors are duck-typed instead: a value counts as a vector if <code>.x</code>, <code>.y</code> and <code>.z</code> are numbers. The re-run smoke test passed 16 of 16, including the ping broadcast.</p></div>
       <div><h4>Suggested fix</h4><p>Document the behaviour in <code>apiEmmyAtomontage.lua</code> and the scripting skill, or make <code>type()</code> return "userdata" as standard Lua does and expose the class through <code>getmetatable</code> or a <code>typeof</code> helper.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b48">
+    <div class="rec-head"><span class="rec-id">B48</span><h3><code>virtualmatter sync</code> leaves orphans and pushes things it shouldn't</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers and agents running <code>sync</code> for a long session, which is the documented workflow, and everyone in the world they are editing.</dd>
+      <dt>What</dt><dd>Stopping a backgrounded <code>npx virtualmatter sync</code> killed only the npx wrapper; the node child kept running. Three syncs were live at once (started at 01:51, 07:26 and 07:44). Between them they:
+        <ul>
+          <li>pulled the 370 MB terrain <code>.am</code>, including the engine's half-written <code>.am~</code> save temp, in parallel on every server terrain save;</li>
+          <li>reported a false "changed both here and in the world" conflict on every push (the saved conflict copy was byte-identical to the pushed file), sometimes with no "pushed" line;</li>
+          <li>pushed partial <code>.vmdownload-*</code> fragments into the world (three were found and deleted) and ping-ponged scene files;</li>
+          <li>re-pushed unchanged scripts, which caused two full Lua resets mid-session.</li>
+        </ul></dd>
+      <dt>When</dt><dd>2026-10-07, over a morning session, after earlier syncs had been "stopped".</dd>
+      <dt>Where</dt><dd>The CLI's <code>sync</code> command: its process handling, its file filters and its conflict check.</dd>
+      <dt>Why</dt><dd>The child isn't tied to the wrapper's lifetime, and sync handles voxel and temporary files it can never push (they exceed the 8 MB push limit) as if they were ordinary files. The concurrent multi-hundred-MB downloads during terrain saves are a likely, unproven, contributor to the restarts in B44.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Hidden sync processes compete with each other and with the server, corrupt the world with partial files, reset every script mid-session, and make real conflicts impossible to spot. Some of the B45 failures may also have come from an orphan.</p></div>
+      <div><h4>Mitigation</h4><p>Long-running sync was stopped. Deploys now go through a push-only script built on the CLI's own files client, which pushes only the files named and verifies each one.</p></div>
+      <div><h4>Suggested fix</h4><p>Kill the child process when the wrapper exits or the console closes. Skip voxel assets and temporary files (<code>*.am</code>, <code>~</code>, <code>.vmdownload-*</code>) that can never be pushed under the 8 MB cap. Don't re-push unchanged files. Add a one-shot <code>push</code> command.</p></div>
+    </div>
+  </article>
+
+  <article class="record med" id="b49">
+    <div class="rec-head"><span class="rec-id">B49</span><h3>A force-killed client stays connected for 1–2 minutes</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Games whose world logic depends on who is online, and testers who close clients abruptly.</dd>
+      <dt>What</dt><dd>A native client that is force-killed stays in <code>Server:GetClients()</code> for about 1–2 minutes. During that time the world counts as occupied: fuel burns and Dimmings run, and the Terrain Keeper's empty-server save is blocked. Test sessions this way drained the Emberheart to 197 fuel, and it had to be refuelled to 800.</dd>
+      <dt>When</dt><dd>After a client is killed rather than closed.</dd>
+      <dt>Where</dt><dd>The server's client list and its disconnect timeout.</dd>
+      <dt>Why</dt><dd>Inferred: the server only drops a client once a connection timeout expires.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Anything keyed on "is anyone here" is wrong for a minute or two after a crash or a killed client, including the only safe moment to save the terrain (B19).</p></div>
+      <div><h4>Mitigation</h4><p>Close clients gracefully where possible.</p></div>
+      <div><h4>Suggested fix</h4><p>A shorter disconnect timeout, or a heartbeat-based "last seen" that scripts can read.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b50">
+    <div class="rec-head"><span class="rec-id">B50</span><h3>Client transform race on NPCs</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Scripts that take over an object's transform on the client by turning off <code>receiveTransform</code>.</dd>
+      <dt>What</dt><dd>Warden Aldric was drawn about five times too big at the hub on a slow client. The NPC's client animation captured the object's position and scale and set <code>receiveTransform = false</code> on its first frame. On a slow client that ran before the first streamed transform arrived, so the default scale of 1 was frozen in.</dd>
+      <dt>When</dt><dd>On clients where the script's first update runs before the first transform update.</dd>
+      <dt>Where</dt><dd>Client-side <code>receiveTransform</code> and the order of transform streaming.</dd>
+      <dt>Why</dt><dd>Nothing tells a client script whether it has received the object's real transform yet.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Visual only, but it varies by client speed, so it is easy to miss in testing on a fast machine.</p></div>
+      <div><h4>Mitigation</h4><p>The server publishes the rest transform (position, scale, yaw) in a networked table, and the client waits for it before taking over.</p></div>
+      <div><h4>Suggested fix</h4><p>Expose a "transform received" flag or event on the client, or apply the first streamed transform before handing control to scripts.</p></div>
     </div>
   </article>
 </section>
@@ -1109,6 +1168,11 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B45</td><td>Restart <code>sync</code> after every server restart; confirm "pushed" lines per deploy</td><td>Process</td></tr>
         <tr><td class="mono">B46</td><td>Joins held until the chat name arrives (up to 20 s); records refused for guest names; playtesters sign in</td><td>Shipped, verified</td></tr>
         <tr><td class="mono">B47</td><td>Vectors duck-typed on .x/.y/.z; Reach smoke test 16/16 including the ping broadcast</td><td>Shipped, verified</td></tr>
+        <tr><td class="mono">B44 (#5, #6)</td><td>Restarts at 07:22 (playtester walking to the hub) and 07:58 (test client); orphaned syncs stopped</td><td>Watching</td></tr>
+        <tr><td class="mono">B29 (rounds 17–18)</td><td>No new rigs while 18+ Hollows are out: worst case 56 fps, worst frame 36–37 ms (was 64–102 ms)</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono">B48</td><td>Long-running sync stopped; push-only deploy script on the CLI's files client</td><td>Process</td></tr>
+        <tr><td class="mono">B49</td><td>Close clients gracefully</td><td>Process</td></tr>
+        <tr><td class="mono">B50</td><td>Rest transform published in a networked table; client waits for it</td><td>Shipped</td></tr>
       </tbody>
     </table>
   </div>
