@@ -194,7 +194,8 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B40</td><td><span class="sev low">Low</span></td><td><a href="#b40">Inactive objects ignore forced raycasts</a></td><td>Forced ray returns nil</td></tr>
         <tr><td class="mono">B41</td><td><span class="sev high">High</span></td><td><a href="#b41"><code>AE:GetDebugTime()</code> restarts with the server process</a></td><td>Every server restart</td></tr>
         <tr><td class="mono">B42</td><td><span class="sev med">Medium</span></td><td><a href="#b42">Baked rig variants are huge; a periodic freeze came with them</a></td><td class="num">329 MB for 111 variants; any bind 40–360 ms</td></tr>
-        <tr><td class="mono">B44</td><td><span class="sev high">High</span></td><td><a href="#b44">The server restarts without warning or a reason</a></td><td>3 restarts in one night</td></tr>
+        <tr><td class="mono">B44</td><td><span class="sev high">High</span></td><td><a href="#b44">The server restarts without warning or a reason</a></td><td>4 restarts in one night; 3 during scaled-part stamping</td></tr>
+        <tr><td class="mono">B45</td><td><span class="sev high">High</span></td><td><a href="#b45">After a server restart, sync silently fails every push</a></td><td>HTTP 403 on every push; 3 deploys lost</td></tr>
         <tr><td class="mono">B43</td><td><span class="sev med">Medium</span></td><td><a href="#b43">The server renders a headless client every frame</a></td><td class="num">~8 ms per frame; ~58 fps at idle</td></tr>
       </tbody>
     </table>
@@ -850,7 +851,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Silent no-ops are found only by auditing the world afterwards, often hours later and by a different agent. B36 went unnoticed through several builds for this reason.</p></div>
-      <div><h4>Mitigation</h4><p>Procedural builds are verified with read-only ray audits (height maps and upward "underside" rays) rather than by trusting the queue's "done".</p></div>
+      <div><h4>Mitigation</h4><p>Procedural builds are verified with read-only ray audits (height maps and upward "underside" rays) rather than by trusting the queue's "done". Because ops are asynchronous, a readback in the same <code>run-lua</code> call still sees the old voxels: a repair script once reported a crate's old height although the remove had worked. Verification now runs as a separate call a second later, or through <code>:OnFinished</code>.</p></div>
       <div><h4>Suggested fix</h4><p>Pass the number of voxels changed to <code>OnFinished</code>, and log a warning when an op changes nothing.</p></div>
     </div>
   </article>
@@ -971,15 +972,31 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div class="rec-head"><span class="rec-id">B44</span><h3>The server restarts without warning or a reason</h3><span class="sev high">High</span><span class="conf">Why: unknown</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Everyone connected, and any game state not yet written to disk.</dd>
-      <dt>What</dt><dd>The live server restarted three times in one night with no warning and no reason given: at about 20:13, at about 22:24, and at about 01:10. Memory stood at 13.1 GB and 14 GB of 32 GB at the last two, so none of them looks like running out of memory. The 01:10 restart came during the first live forge measurement; repeating the same forge five minutes later ran to completion without one, so the trigger is unknown.</dd>
-      <dt>When</dt><dd>Apparently at random, under ordinary load.</dd>
+      <dt>What</dt><dd>The live server restarted three times in one night with no warning and no reason given: at about 20:13, at about 22:24, and at about 01:10. Memory stood at 13.1 GB and 14 GB of 32 GB at the last two, so none of them looks like running out of memory. The 01:10 restart came during the first live forge measurement; repeating the same forge five minutes later ran to completion without one, so the trigger is unknown.<br><br><b>Update:</b> a fourth restart came at about 01:35 (uptime reset to 46 s), while a background job was stamping small voxel ops onto pooled Hollow rig parts (scale about 0.19) at one op every three frames. Just before it, that "idle" dressing measured 25.1 fps, an average update of 38.9 ms, 32 frames over 50 ms and a worst frame of 596 ms; an offline mock had predicted about 8 ms per op frame. Three of the four restarts happened during live voxel stamping on scaled rig parts or shells: at about 22:24 (the first armour stamping), 01:10 (a forge) and 01:35 (Hollow dressing).</dd>
+      <dt>When</dt><dd>Three of four during sustained voxel stamping on scaled rig parts; one (about 20:13) under ordinary load.</dd>
       <dt>Where</dt><dd>The server process or its host.</dd>
-      <dt>Why</dt><dd>Unknown. Nothing visible from inside the world, or through the CLI, records a cause.</dd>
+      <dt>Why</dt><dd>Unknown. Nothing visible from inside the world, or through the CLI, records a cause. The link to stamping on scaled parts is a correlation, not proof: a repeat of the 01:10 forge did not crash.</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Players are dropped, process-uptime clocks restart (B41), and everything since the last disk save is lost: the 22:24 restart reverted a world repair made minutes earlier. A game can't plan for restarts it can't see coming or explain.</p></div>
-      <div><h4>Mitigation</h4><p>The game assumes a restart can happen at any moment: a persistent game clock, an immediate ledger save after one-shot repairs, and boot passes that repair homes and replay the terrain journal. After the 01:10 restart the game clock (8,748 s against 204 s of uptime), the home re-seat, the dressed world, the Undercroft, lore and Omens all survived.</p></div>
+      <div><h4>Mitigation</h4><p>The game assumes a restart can happen at any moment: a persistent game clock, an immediate ledger save after one-shot repairs, and boot passes that repair homes and replay the terrain journal. Continuous background stamping on scaled rig parts is shelved: the Hollow dressing was reverted (idle back to 59.7 fps, worst frame 17 ms). Player forging stays, because it is short, player-triggered and measured at a worst frame of about 50 ms. After the 01:10 restart the game clock (8,748 s against 204 s of uptime), the home re-seat, the dressed world, the Undercroft, lore and Omens all survived.</p></div>
       <div><h4>Suggested fix</h4><p>Record the reason for every restart (crash, host maintenance, watchdog, deploy) where makers can read it, warn connected players before planned restarts, and give scripts a shutdown hook to flush state.</p></div>
+    </div>
+  </article>
+
+  <article class="record high" id="b45">
+    <div class="rec-head"><span class="rec-id">B45</span><h3>After a server restart, sync silently fails every push</h3><span class="sev high">High</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Makers and agents who keep <code>virtualmatter sync</code> running while they edit, which is the documented workflow.</dd>
+      <dt>What</dt><dd>After the 01:35 restart (B44), the long-running <code>sync</code> process started failing every push with HTTP 403 and kept running as if nothing had happened. Three deploys looked done locally (the files compared identical to the staged copies) but never reached the server. Restarting <code>sync</code> fixed it.</dd>
+      <dt>When</dt><dd>After a server restart, until <code>sync</code> is restarted.</dd>
+      <dt>Where</dt><dd>The CLI's <code>sync</code> command and its session with the server.</dd>
+      <dt>Why</dt><dd>Inferred: <code>sync</code> keeps a session that the restart invalidates, and it neither renews the session nor stops on the 403.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Deploys silently don't happen. A local check that the file was written (the deploy step's <code>cmp</code>) passes, so the maker believes the world is running code it isn't. Combined with B44's unannounced restarts, any long session can lose deploys without noticing.</p></div>
+      <div><h4>Mitigation</h4><p>Restart <code>sync</code> after any server restart, and confirm "pushed" lines in its log for each deploy rather than relying on a local file comparison.</p></div>
+      <div><h4>Suggested fix</h4><p>Have <code>sync</code> re-authenticate on a 403, and exit or print a loud error if it can't, instead of continuing silently.</p></div>
     </div>
   </article>
 </section>
@@ -1054,6 +1071,8 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B29 (round 16)</td><td>Hollow, Body and Beacon components inactive, driven by one manager: steady 54.7 fps, worst 32 ms, no frames over 33 ms; script time 8.66 → 4.15 ms</td><td>Shipped, measured</td></tr>
         <tr><td class="mono">B43</td><td>None possible in game code; fewer active objects</td><td>Reported</td></tr>
         <tr><td class="mono">B41</td><td>Persistent game clock in the ledger; immediate ledger save after one-shot repairs; boot-time home repair</td><td>Shipped</td></tr>
+        <tr><td class="mono">B44 (update)</td><td>Fourth restart during background Hollow dressing (25.1 fps, worst 596 ms beforehand); dressing reverted (59.7 fps, worst 17 ms); continuous stamping on scaled parts shelved</td><td>Shelved</td></tr>
+        <tr><td class="mono">B45</td><td>Restart <code>sync</code> after every server restart; confirm "pushed" lines per deploy</td><td>Process</td></tr>
       </tbody>
     </table>
   </div>
@@ -1109,6 +1128,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div><b>Persistence</b><p>Player homes, fuel levels and quest state survived Lua reloads through a ledger serialized as Lua-literal strings.</p></div>
     <div><b>Live building</b><p>A 160 m map, five segmented character rigs and ten tutorial steps were all built through the CLI without opening the editor.</p></div>
     <div><b>Runtime voxel detail on characters</b><p>Worn armour is stamped as voxels straight into each player's own copies of the rig parts, so it adds no objects. Each plate is an oriented box built from the part's transform at the moment its edit runs, which keeps it correct on a moving character. Verified on a live dummy at tiers 1 and 3. Caveat (B31): measure the live rig; offline mocks got the part scale wrong.</p></div>
+    <div><b>Automated server-side playtests</b><p>A smoke test drives a scripted newcomer through the whole tutorial on the live server, using the game's real server calls. It caught a blocker every offline mock had missed: the shrine's interaction range overlapped the altar's, so no newcomer could choose a calling. It also caught tutorial slots that were never rebuilt. The fixed tutorial passes 14 of 14 checks. This partly works around B35: the server side can be tested automatically, even though the client can't.</p></div>
     <div><b>Inactive script components</b><p>Setting a script component inactive stops the engine calling its <code>Update</code> (0 µs), while its networked writes still replicate, it still sends and receives RPCs, and its client copies keep running. Deleting the <code>Update</code> function doesn't help: the call still costs about 29 µs. Driving many objects from one manager this way halved game script time (8.66 → 4.15 ms per frame).</p></div>
     <div><b>Baking runtime detail into assets</b><p>Stamping a template copy once and calling <code>VoxelData:SaveAs</code> stores the stamps in a new asset. Bound copies measured 22–26k voxels against 15.9k plain, so the detail survives, and spawning from the baked variants costs no voxel ops. It is now used live for Hollow crusts. Cosmetic detail on scaled rigs should be baked, not stamped at runtime, but baked variants are large (B42), so keep their number small.</p></div>
   </div>
