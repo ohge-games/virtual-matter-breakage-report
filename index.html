@@ -206,6 +206,12 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B53</td><td><span class="sev low">Low</span></td><td><a href="#b53">Generated asset names are normalised</a></td><td>"v2" → "V2", "V2L" → "V2l"</td></tr>
         <tr><td class="mono">B54</td><td><span class="sev low">Low</span></td><td><a href="#b54">Text-to-music sometimes returns a 5–15 s clip</a></td><td>2 of 8 beds regenerated</td></tr>
         <tr><td class="mono">B55</td><td><span class="sev low">Low</span></td><td><a href="#b55">Networked tables adopt the tables they're given</a></td><td>"table can not have metatable"</td></tr>
+        <tr><td class="mono">B56</td><td><span class="sev low">Low</span></td><td><a href="#b56">MUI panels don't wrap by default, though the docs say they do</a></td><td><code>overflow</code> defaults to "Hidden"</td></tr>
+        <tr><td class="mono">B57</td><td><span class="sev low">Low</span></td><td><a href="#b57"><code>Widget.sizing</code> is write-only</a></td><td>Reading it raises</td></tr>
+        <tr><td class="mono">B58</td><td><span class="sev low">Low</span></td><td><a href="#b58">A disabled button is illegible</a></td><td>Blue-grey tint, near-invisible text</td></tr>
+        <tr><td class="mono">B59</td><td><span class="sev low">Low</span></td><td><a href="#b59">A clear background with a frame renders as a grey fill</a></td><td>Transparent + border</td></tr>
+        <tr><td class="mono">B60</td><td><span class="sev low">Low</span></td><td><a href="#b60"><code>string.upper</code> corrupted a multi-byte character</a></td><td>"—" mangled</td></tr>
+        <tr><td class="mono">B61</td><td><span class="sev low">Low</span></td><td><a href="#b61">Generated icon art is unreadable below about 24 px</a></td><td>39 generated icons</td></tr>
         <tr><td class="mono">B43</td><td><span class="sev med">Medium</span></td><td><a href="#b43">The server renders a headless client every frame</a></td><td class="num">~8 ms per frame; ~58 fps at idle</td></tr>
       </tbody>
     </table>
@@ -1102,7 +1108,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <div class="rec-head"><span class="rec-id">B51</span><h3>Publishing to a play server can boot the wrong scene, then save over the published one</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers who publish a world with large voxel files to a play server, and the players who open the link.</dd>
-      <dt>What</dt><dd>Each "Update play servers" restarted the play server before the 390 MB terrain upload had finished, so it booted the old starter scene ("Plane 52m Dark Tile4m"). With "Persisting scene changes" on, the running game's regular scene save then wrote that plane-linked scene back over the published scene on the play server, so every later update booted the broken scene again. The project page's per-server status also stayed "queued" for 15+ minutes after the sync had finished, including after a Restart.</dd>
+      <dt>What</dt><dd>Each "Update play servers" restarted the play server before the 390 MB terrain upload had finished, so it booted the old starter scene ("Plane 52m Dark Tile4m"). With "Persisting scene changes" on, the running game's regular scene save then wrote that plane-linked scene back over the published scene on the play server, so every later update booted the broken scene again. The project page's per-server status also stayed "queued" for 15+ minutes after the sync had finished, including after a Restart.<br><br><b>Update:</b> on a later publish, the first "Update play servers" restarted the server and reported finished while delivering none of the changes; only then did the page say "Some of your editor's content never reached every play server". A second update delivered the scripts and music, restarted again, and the repainted 390 MB terrain landed two minutes after the boot, so it only takes effect on the next cold start (play servers sleep 15 minutes after the last player leaves).</dd>
       <dt>When</dt><dd>2026-10-07, on the first publishes to a Europe play server.</dd>
       <dt>Where</dt><dd>The play-server update path (restart order versus file upload), scene persistence, and the project page's server status.</dd>
       <dt>Why</dt><dd>The update doesn't wait for large files to land before restarting, and nothing stops a running server from persisting a scene that booted on the wrong assets.</dd>
@@ -1175,6 +1181,102 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Impact</h4><p>An error at runtime that only appears once a second object shares the cached value.</p></div>
       <div><h4>Mitigation shipped</h4><p>Each character now gets a plain copy of the cached table.</p></div>
       <div><h4>Suggested fix</h4><p>Copy nested tables on assignment, or document the adoption and give a clearer error.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b56">
+    <div class="rec-head"><span class="rec-id">B56</span><h3>MUI panels don't wrap by default, though the docs say they do</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone building screen UI with the MUI/NewUI widgets.</dd>
+      <dt>What</dt><dd>A panel's <code>overflow</code> defaults to "Hidden": children stay on one line and anything past the edge is clipped. The only other value is "Wrap". Six 80-unit children in a 300-unit box gave one clipped line with "Hidden" and two lines of three with "Wrap". The agent guide's cheat sheet describes MUI as a "flexbox-like row-wrap layout".</dd>
+      <dt>When</dt><dd>2026-10-07, while rebuilding Ashlight's whole interface (round 21).</dd>
+      <dt>Where</dt><dd>MUI panel layout (<code>overflow</code>); the SDK agent guide.</dd>
+      <dt>Why</dt><dd>The default doesn't match the documented behaviour.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Cards, chip rows and multi-line text silently clip instead of flowing, and the mismatch costs a debugging round.</p></div>
+      <div><h4>Mitigation</h4><p>The game's frame helper defaults to <code>overflow = "Wrap"</code>, and other multi-line containers break lines explicitly with <code>endLine</code>.</p></div>
+      <div><h4>Suggested fix</h4><p>Make the docs say "Hidden" is the default (or change the default to wrap), and mention <code>endLine</code> next to it.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b57">
+    <div class="rec-head"><span class="rec-id">B57</span><h3><code>Widget.sizing</code> is write-only</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone building screen UI with the MUI/NewUI widgets.</dd>
+      <dt>What</dt><dd>Reading <code>Widget.sizing</code> raises an error; it can only be assigned. <code>sizingX</code> reads back as an enum integer. A layout probe that walked the widget tree reading <code>sizing</code> therefore never found the card it was looking for.</dd>
+      <dt>When</dt><dd>2026-10-07, while rebuilding Ashlight's whole interface (round 21).</dd>
+      <dt>Where</dt><dd>MUI widget properties.</dd>
+      <dt>Why</dt><dd>The property has a setter but no getter, and this isn't documented.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Layout code and debugging tools that read sizes back fail, and the error doesn't say the property is write-only.</p></div>
+      <div><h4>Mitigation</h4><p>Keep the intended sizing in the game's own tables instead of reading it back.</p></div>
+      <div><h4>Suggested fix</h4><p>Add a getter, or document which widget properties are write-only.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b58">
+    <div class="rec-head"><span class="rec-id">B58</span><h3>A disabled button is illegible</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone building screen UI with the MUI/NewUI widgets.</dd>
+      <dt>What</dt><dd>Setting the engine's <code>enabled = false</code> on a button tints it blue-grey and leaves its text nearly invisible.</dd>
+      <dt>When</dt><dd>2026-10-07, while rebuilding Ashlight's whole interface (round 21).</dd>
+      <dt>Where</dt><dd>MUI buttons (<code>enabled</code>).</dd>
+      <dt>Why</dt><dd>The engine applies its own disabled tint, regardless of the button's styling.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>A disabled option can't be read, so players can't see what is unavailable or why.</p></div>
+      <div><h4>Mitigation</h4><p>The game never sets the engine's <code>enabled</code>; a disabled button is a style (dim outline, no handlers).</p></div>
+      <div><h4>Suggested fix</h4><p>Let the disabled look be styled, or make the default tint keep text readable.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b59">
+    <div class="rec-head"><span class="rec-id">B59</span><h3>A clear background with a frame renders as a grey fill</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Anyone building screen UI with the MUI/NewUI widgets.</dd>
+      <dt>What</dt><dd>A panel with a transparent background and a border is drawn with a default blue-grey fill instead of staying clear.</dd>
+      <dt>When</dt><dd>2026-10-07, while rebuilding Ashlight's whole interface (round 21).</dd>
+      <dt>Where</dt><dd>MUI panel backgrounds.</dd>
+      <dt>Why</dt><dd>A frame appears to force a default background colour when none is visible.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Outlined, see-through elements (unselected list rows, detail panes) show up as grey boxes.</p></div>
+      <div><h4>Mitigation</h4><p>Unselected rows and the detail pane have no frame at all; only the selected row is raised and framed.</p></div>
+      <div><h4>Suggested fix</h4><p>Respect a fully transparent background when a border is set.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b60">
+    <div class="rec-head"><span class="rec-id">B60</span><h3><code>string.upper</code> corrupted a multi-byte character</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Scripts that uppercase text containing non-ASCII characters (titles, names).</dd>
+      <dt>What</dt><dd>In testing, <code>string.upper</code> mangled a multi-byte em dash ("—") in a title.</dd>
+      <dt>When</dt><dd>2026-10-07, while rebuilding Ashlight's whole interface (round 21).</dd>
+      <dt>Where</dt><dd>Lua's <code>string.upper</code> in the engine.</dd>
+      <dt>Why</dt><dd>Inferred: <code>string.upper</code> works byte by byte under the server's C locale, which can alter bytes of UTF-8 sequences.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Corrupted characters in uppercase titles, which only appear for some strings.</p></div>
+      <div><h4>Mitigation</h4><p>Titles use an ASCII-only uppercase helper that leaves other bytes untouched.</p></div>
+      <div><h4>Suggested fix</h4><p>Run Lua under a locale whose <code>toupper</code> leaves bytes above 127 alone, or provide a UTF-8-aware upper.</p></div>
+    </div>
+  </article>
+
+  <article class="record" id="b61">
+    <div class="rec-head"><span class="rec-id">B61</span><h3>Generated icon art is unreadable below about 24 px</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>Games that use generated images as UI icons.</dd>
+      <dt>What</dt><dd>The 39 generated dark-fantasy icons turn into smudges when drawn smaller than about 24 px on a dark UI.</dd>
+      <dt>When</dt><dd>2026-10-07, while rebuilding Ashlight's whole interface (round 21).</dd>
+      <dt>Where</dt><dd>Generated image assets used in MUI icon slots.</dd>
+      <dt>Why</dt><dd>Painterly detail doesn't survive being scaled down to a few pixels.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Small HUD slots (resource rows, the loot feed, the ability bar) can't use the art directly.</p></div>
+      <div><h4>Mitigation</h4><p>The art is drawn only at 24 px and up; smaller slots use coloured shape tokens, and art under 48 px gets a thin ember outline.</p></div>
+      <div><h4>Suggested fix</h4><p>Offer an icon-generation mode that produces simple, high-contrast glyphs, or allow vector or atlas icons for small sizes.</p></div>
     </div>
   </article>
 </section>
@@ -1260,10 +1362,17 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
         <tr><td class="mono">B50</td><td>Rest transform published in a networked table; client waits for it</td><td>Shipped</td></tr>
         <tr><td class="mono">B44 (#7)</td><td>Rig-op budget (4/s, none near players), zero-op crust chips, Warden rebuild never stamps within 80 m; siege smoke rig ops 34 → 0</td><td>Shipped, measured</td></tr>
         <tr><td class="mono">B51</td><td>Boot-time terrain relink (<code>repairTerrainLink</code>); verified on the play server</td><td>Shipped, verified</td></tr>
+        <tr><td class="mono">B51 (update)</td><td>A publish reported finished while delivering nothing; retried, then verified the play server's code, terrain and music by probe</td><td>Process</td></tr>
         <tr><td class="mono">B52</td><td>Scenes backed up; live world saved as InitScene with its own terrain copy</td><td>Fixed by hand</td></tr>
         <tr><td class="mono">B53</td><td>Case-insensitive lookup with a v1 fallback</td><td>Shipped</td></tr>
         <tr><td class="mono">B54</td><td>Check durations; regenerate short takes</td><td>Process</td></tr>
         <tr><td class="mono">B55</td><td>Plain copies for each networked table</td><td>Shipped</td></tr>
+        <tr><td class="mono">B56</td><td>Frame helper defaults to <code>overflow = "Wrap"</code>; explicit <code>endLine</code> elsewhere</td><td>Shipped</td></tr>
+        <tr><td class="mono">B57</td><td>Sizes kept in game tables, never read back</td><td>Shipped</td></tr>
+        <tr><td class="mono">B58</td><td>Disabled buttons are a style, not the engine flag</td><td>Shipped</td></tr>
+        <tr><td class="mono">B59</td><td>No frame on clear elements; only the selected row is framed</td><td>Shipped</td></tr>
+        <tr><td class="mono">B60</td><td>ASCII-only uppercase helper for titles</td><td>Shipped</td></tr>
+        <tr><td class="mono">B61</td><td>Art at 24 px and up; coloured shape tokens below</td><td>Shipped</td></tr>
       </tbody>
     </table>
   </div>
