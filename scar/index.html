@@ -131,7 +131,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
 </head><body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 08 Oct 2026 19:13 · 14 breakages (4 critical · 4 high · 4 medium · 2 low)</div>
+  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 08 Oct 2026 20:48 · 20 breakages (5 critical · 7 high · 5 medium · 3 low)</div>
   <h1>Where Virtual Matter Breaks: destruction FPS</h1>
   <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given.</p>
   <div class="facts">
@@ -162,12 +162,19 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
         <tr><td class="mono">F12</td><td><span class="sev crit">Critical</span></td><td><a href="#f12">Every static edit costs one 30-50 ms server frame whatever its size; &gt;~0.6 edits/s breaks a p99 &lt; 33 ms target</a></td><td>Measured; governor shipped</td></tr>
         <tr><td class="mono">F13</td><td><span class="sev high">High</span></td><td><a href="#f13">The server-side screenshot client goes stale after a map-scale rebuild (half the map missing)</a></td><td>Observed</td></tr>
         <tr><td class="mono">F14</td><td><span class="sev crit">Critical</span></td><td><a href="#f14">A freshly joined client receives gameplay edits 12-45 s late; 4 of 10 never arrived at the 2.5 ops/s budget</a></td><td>Measured; designed around</td></tr>
+        <tr><td class="mono">F15</td><td><span class="sev high">High</span></td><td><a href="#f15">An object name set after creation (e.g. after <code>Scene:CloneObject</code>) never reaches clients: clones keep the source name</a></td><td>Measured; worked around (ids)</td></tr>
+        <tr><td class="mono">F16</td><td><span class="sev high">High</span></td><td><a href="#f16"><code>Scene:CloneObject</code> of a 12-part rig costs ~110 ms of server main thread (~9 ms per voxel part); new objects double the frame time while they stream</a></td><td>Measured</td></tr>
+        <tr><td class="mono">F17</td><td><span class="sev crit">Critical</span></td><td><a href="#f17">Clients draw large terrain regions as grey placeholders with wireframe edges while collision there is correct; the holes follow the view</a></td><td>Observed repeatedly; mitigation testing</td></tr>
+        <tr><td class="mono">F18</td><td><span class="sev high">High</span></td><td><a href="#f18"><code>imagine()</code> jobs are silently orphaned by any Lua reset (a <code>.lua</code> push): the progress script stays forever, no error, no asset</a></td><td>Observed 6 times</td></tr>
+        <tr><td class="mono">F19</td><td><span class="sev med">Medium</span></td><td><a href="#f19">Small per-frame Lua garbage (~7k tables/s) produced 10-14 ms client GC spikes, charged to whichever script allocates</a></td><td>Measured; fixed in SCAR</td></tr>
+        <tr><td class="mono">F20</td><td><span class="sev low">Low</span></td><td><a href="#f20">Scoped zoom (FOV 14) still renders distance-based LOD, so a 4.6x scope magnifies coarse voxels</a></td><td>Observed</td></tr>
     </tbody></table></div>
 </section>
 <section id="changelog">
   <h2>Changelog</h2>
   <ul class="changelog">
-    <li><b>8 Oct 2026 (latest):</b> F4 count 8 (the 8th disconnect followed a 51.8 s upstream stall with no screenshot involved, so screenshots are not the only trigger). Report is now a living document under the Ashlight edition's site.</li>
+    <li><b>8 Oct 2026 (latest):</b> F15-F20 and N1 from the character and animation work (generated soldier cut into a 12-part rig, procedural animation, scale bench) and the first live playtest (render holes, orphaned generations).</li>
+    <li><b>8 Oct 2026:</b> F4 count 8 (the 8th disconnect followed a 51.8 s upstream stall with no screenshot involved, so screenshots are not the only trigger). Report is now a living document under the Ashlight edition's site.</li>
     <li><b>8 Oct 2026:</b> F12 (per-op static edit cost), F13 (stale screenshot client after a map-scale rebuild) and F14 (late edits for freshly joined clients) added from the gameplay delivery bench; F4 updated with the client-log stall evidence (7 occurrences).</li>
     <li><b>8 Oct 2026 (first edition):</b> F1-F11, from the terrain edit bench (B3/B28/B16) and the first SCAR build.</li>
   </ul>
@@ -305,6 +312,61 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
       <div><h4>Impact</h4><p>the digger's own hole appears seconds to tens of seconds after the stroke; craters appear long after the blast; collision differs from the server meanwhile.</p></div>
       <div><h4>Mitigation shipped</h4><p>gameplay never depends on client terrain: exposure, crate pop-up, hit occlusion and validation all use server terrain; the crate surfaces at the hole's rim; dig progress is reported by the server ("CACHE 1.1 m"); client-side dirt/scorch effects play immediately; the divergence detector lifts players out of terrain they are inside of. Lower-resolution static terrain (16 vpm) would quarter the stream, but no such empty terrain asset exists (32/64/128 only).</p></div>
       <div><h4>Suggested fix</h4><p>push edit deltas ahead of bulk detail streaming; offer a 16 vpm static terrain option.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="f15">
+    <div class="rec-head"><span class="rec-id">F15</span><h3>An object name set after creation never reaches clients</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <p>The SCAR avatar scale bench cloned "Scar Rig 10" 40 times with <code>Scene:CloneObject</code> and renamed each clone ("Scar Bench Rig k") on the server. The server listed 40 bench rigs and one "Scar Rig 10"; the connected native client listed <b>41 objects named "Scar Rig 10"</b> and none of the new names, minutes later. Client code that finds objects by name therefore never finds a clone. Workaround: pass <code>Object.id</code> (documented as unique across server and clients) and resolve with <code>Scene:GetObjectById</code>. Suggested fix: replicate name changes, or document that names are creation-time only.</p>
+  </article>
+  <article class="record high" id="f16">
+    <div class="rec-head"><span class="rec-id">F16</span><h3>Cloning a multi-part voxel rig stalls the server about 110 ms per rig</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>What</dt><dd><code>Scene:CloneObject</code> of a 12-part rig, with each part bound to a baked <code>.am</code> asset, took 96-113 ms of server main thread per rig (about 9 ms per voxel part, max 144 ms). Ten clones in one Lua call stalled the server for about 1.1 s.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>After</h4><p>with 40 extra rigs (480 dynamic voxel objects), the server median frame went from 16.9 to 29.8 ms while the new objects streamed out. Once streaming settled, the median was back to 16.7 ms with all 40 rigs still present (p99 17 ms), so there is no lasting per-object cost.</p></div>
+      <div><h4>Why it matters</h4><p>every clone deep-copies its assets on the main thread (B29). VM reported that B44 engine crashes happen during rig asset copy and free.</p></div>
+      <div><h4>Mitigation</h4><p>SCAR binds each rig part's asset once at pool build, one part per frame, and never rebinds or frees. Bench rigs are deactivated rather than destroyed.</p></div>
+    </div>
+  </article>
+  <article class="record crit" id="f17">
+    <div class="rec-head"><span class="rec-id">F17</span><h3>Clients draw terrain as grey placeholders while its collision is correct</h3><span class="sev crit">Critical</span><span class="conf">Why: observed repeatedly</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every player. The playtester reported it several times: "lots of world loading issues while moving; sometimes part of the map isn't generated while turning", then "large chunks of map aren't rendered".</dd>
+      <dt>What</dt><dd>whole regions of the 112 m map render as flat grey surfaces with wireframe chunk edges, with floating bushes and boulders. A screenshot pair 3 minutes apart from the same spot showed the east half missing, then the west half missing while the east rendered.</dd>
+      <dt>Where</dt><dd>the native client (73.0.1554), after 10-50 minutes of play on a field with ongoing digging. The client sat at 5.8 GB resident at launch and 7.4 GB after 50 minutes (65 GB host), so memory pressure is not the cause.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Collision is fine</h4><p>client rays over a 6 x 5 grid inside a missing region matched the server's terrain heights within the known LOD offset (F5). The client has the voxel data and is not drawing it.</p></div>
+      <div><h4>Mitigation shipped (testing)</h4><p>a third LOD priority bubble around the player (<code>Client:AddPlayerLODPriorityBubbleShape</code>, radius 25 m, size 0.6), so detail all around the player is kept, not only in view. The SDK controller's bubbles are 2 m and 4 m only.</p></div>
+      <div><h4>Suggested fix</h4><p>keep a radius around the camera resident regardless of view direction, and expose the render streamer's budget.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="f18">
+    <div class="rec-head"><span class="rec-id">F18</span><h3>Lua resets silently orphan imagine() generations</h3><span class="sev high">High</span><span class="conf">Why: observed </span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>What</dt><dd>generations started with <code>imagine(prompt, Object, opts)</code> never finish if any <code>.lua</code> file is pushed while they run. The object keeps its <code>Gen Progress</code> script indefinitely (observed 25+ minutes) and no error is printed. Four weapon jobs were lost this way, then two more.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Also seen</h4><p>one carbine job ended with no asset and no visible error. The documented "[imagine] generation failed" line was not seen through the CLI.</p></div>
+      <div><h4>Contrast</h4><p><code>fast = true, hq = true</code> soldier and weapon jobs finished in 2-6 minutes when nothing was pushed.</p></div>
+      <div><h4>Impact</h4><p>an agent that iterates on scripts while models generate loses the models.</p></div>
+      <div><h4>Mitigation</h4><p>no <code>.lua</code> pushes while jobs are pending, and staging below the map (staging in the air left models visible in players' sky).</p></div>
+      <div><h4>Suggested fix</h4><p>resume orphaned jobs after a Lua reset (the docs say the Shape Manager does this; it did not here), or fail them visibly.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="f19">
+    <div class="rec-head"><span class="rec-id">F19</span><h3>Small per-frame Lua garbage produces 10-14 ms client GC spikes</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <p>SCAR's procedural avatars allocated about 20 small tables per rig per pose (7 rigs at 60 fps, about 7k tables/s). The avatar script measured 87 of 1,015 frames over 2 ms with 14 ms peaks, although its own work averages 0.3 ms. Reusing the tables gave 2 of 1,744 frames over 2 ms with a 2.4 ms peak. The spikes are incremental GC steps charged to whichever script allocates. Rays (0.08-0.13 ms), <code>localPos</code>/<code>localRot</code> writes (0.0008 ms) and Vec3/Quat construction (0.0003 ms) are cheap. A controlled A/B of client fps against injected garbage was inconclusive (25-36 fps either way, with the window unfocused). Suggested fix: document the GC budget, and expose <code>collectgarbage("step")</code> control or a generational GC on clients.</p>
+  </article>
+  <article class="record low" id="f20">
+    <div class="rec-head"><span class="rec-id">F20</span><h3>A scoped zoom still renders distance LOD</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <p>At FOV 14 (4.6x), the Marksman scope shows the same voxel LOD as the unzoomed view, so distant targets and terrain look coarse when magnified. The renderer picks LOD by distance, not projected size. Suggested fix: scale the LOD distance by FOV, or expose an LOD bias for the active camera. ## N1. What worked (for the engine team)</p>
+    <div class="extra">
+      <div><h4>Cross-scale copy</h4><p><code>Vox:Copy</code> from an hq generated model at scale 0.179 into scale-1 parts resamples cleanly; a 10-part soldier was cut in 0.4 s.</p></div>
+      <div><h4>Rays on scaled objects</h4><p>plain (non-forced) rays hit scaled dynamic objects, unlike B31's forced rays.</p></div>
+      <div><h4>Tint</h4><p><code>VoxelData.tintColor</code> team tint and a damage flash replicate and cost nothing measurable.</p></div>
+      <div><h4>Procedural animation</h4><p>client-side animation of 10 flat 12-part rigs (two-bone IK, world-planted feet, verlet ragdolls) costs 0.28 ms/frame. Server cost is unchanged (p99 16.9 ms).</p></div>
     </div>
   </article>
 </section>
