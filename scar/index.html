@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Virtual Matter Breakage Report: FPS edition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a single engineering-report column; summary table first, then one 5W record per breakage, then measured limits. */
+:root {
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --fg: #15181d;
+  --muted: #5b6370;
+  --line: #d9dde3;
+  --accent: #2f4fa2;
+  --code-bg: #eceef2;
+  --sev-crit: #b3261e;
+  --sev-high: #c2570c;
+  --sev-med: #8a6d00;
+  --sev-low: #5b6370;
+  --ok: #1f7a4a;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111317; --surface: #1a1d23; --fg: #e7e9ed; --muted: #9aa2ae; --line: #2c3139;
+    --accent: #8fa8ec; --code-bg: #22262d;
+    --sev-crit: #f2766d; --sev-high: #f39a52; --sev-med: #e0c04d; --sev-low: #9aa2ae; --ok: #5cc98d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111317; --surface: #1a1d23; --fg: #e7e9ed; --muted: #9aa2ae; --line: #2c3139;
+  --accent: #8fa8ec; --code-bg: #22262d;
+  --sev-crit: #f2766d; --sev-high: #f39a52; --sev-med: #e0c04d; --sev-low: #9aa2ae; --ok: #5cc98d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 920px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: 2.3rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; font-weight: 600; }
+h3 { font-size: 1.15rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 14px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 0.85rem; color: var(--muted); }
+.facts span b { color: var(--fg); font-weight: 500; }
+section { display: grid; gap: 16px; }
+.lede { font-size: 1.05rem; }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 72ch; }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td a { text-decoration: none; }
+td a:hover, td a:focus-visible { text-decoration: underline; }
+
+.sev { display: inline-block; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; font-weight: 500; }
+.sev.crit { color: var(--sev-crit); }
+.sev.high { color: var(--sev-high); }
+.sev.med { color: var(--sev-med); }
+.sev.low { color: var(--sev-low); }
+.conf { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+
+.record { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--sev-low); border-radius: 4px; padding: 20px 22px; display: grid; gap: 14px; scroll-margin-top: 16px; }
+.record.crit { border-left-color: var(--sev-crit); }
+.record.high { border-left-color: var(--sev-high); }
+.record.med { border-left-color: var(--sev-med); }
+.rec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.rec-id { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.w5 { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 7px 14px; margin: 0; }
+.w5 dt { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.w5 dd { margin: 0; min-width: 0; }
+.extra { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.extra > div { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.extra h4 { margin: 0; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+pre { margin: 0; background: var(--code-bg); border-radius: 4px; padding: 10px 12px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.5; }
+pre code { background: none; padding: 0; font-size: inherit; }
+
+.bars { display: grid; gap: 8px; }
+.bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 64px; gap: 10px; align-items: center; font-size: 0.85rem; }
+.bar-row .lab { color: var(--muted); }
+.bar-track { height: 12px; background: var(--code-bg); border-radius: 2px; position: relative; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); }
+.bar-fill.bad { background: var(--sev-crit); }
+.bar-fill.warn { background: var(--sev-high); }
+.bar-row .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.floor-note { font-size: 0.8rem; color: var(--muted); }
+
+.held { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.held div { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; min-width: 0; }
+.held b { display: block; font-family: var(--font-display); font-weight: 600; font-size: 1rem; color: var(--ok); }
+.held p { font-size: 0.88rem; color: var(--muted); }
+
+footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 6px; }
+
+ol.plain { margin: 0; padding-left: 1.5em; display: grid; gap: 8px; max-width: 72ch; }
+ol.plain ul, ul.plain ul { margin: 4px 0 0; padding-left: 1.2em; display: grid; gap: 3px; }
+.final-status { display: inline-block; justify-self: start; font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0.04em; padding: 5px 10px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 3px; background: var(--surface); }
+.back { margin-left: auto; font-family: var(--font-mono); font-size: 0.7rem; text-decoration: none; color: var(--muted); }
+.back:hover, .back:focus-visible { color: var(--accent); text-decoration: underline; }
+#index { scroll-margin-top: 16px; }
+section[id] { scroll-margin-top: 16px; }
+.exec { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; padding: 20px 22px; }
+.exec ol { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; max-width: 76ch; }
+nav.toc { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 14px 18px; display: grid; gap: 8px; }
+nav.toc ol { margin: 0; padding-left: 1.4em; columns: 2 260px; column-gap: 28px; font-size: 0.9rem; }
+nav.toc li { break-inside: avoid; padding: 2px 0; }
+.engine h3 { margin-top: 6px; }
+.engine .takeaway { border-left: 3px solid var(--accent); padding-left: 12px; max-width: 76ch; }
+.autopsy h3 { margin-top: 8px; }
+.autopsy .note { color: var(--muted); font-style: italic; }
+@media (max-width: 560px) {
+  h1 { font-size: 1.8rem; }
+  .w5 { grid-template-columns: 1fr; gap: 2px; }
+  .w5 dd { margin-bottom: 8px; }
+  .bar-row { grid-template-columns: 96px minmax(0, 1fr) 54px; }
+  .record { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+.changelog{margin:0;padding-left:1.2em;line-height:1.6}.changelog li{margin:.2em 0}</style>
+</head><body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 08 Oct 2026 19:12 · 14 breakages (4 critical · 4 high · 4 medium · 2 low)</div>
+  <h1>Where Virtual Matter Breaks: destruction FPS</h1>
+  <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given.</p>
+  <div class="facts">
+    <span>Edit framing <b class="mono">18QYJ28E5mDi5I1uRKpoY</b></span>
+    <span>Engine <b class="mono">iteration073 · 384c388</b></span>
+    <span>Client <b>Native, Windows, 73.0.1554</b></span>
+    <span>Tooling <b>virtualmatter CLI 0.6.5 + vm-agent-tools</b></span>
+    <span>Previous edition <b><a href="https://ohge-games.github.io/virtual-matter-breakage-report/">Ashlight v33</a></b></span>
+  </div>
+</header>
+
+<section id="index">
+  <h2>Breakage index</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>#</th><th>Severity</th><th>Breakage</th><th>Status</th></tr></thead>
+    <tbody>
+        <tr><td class="mono">F1</td><td><span class="sev crit">Critical</span></td><td><a href="#f1">Static edits reach connected clients through a slow, capped stream; bursts leave clients wrong for minutes (extends B28)</a></td><td>Measured; designed around</td></tr>
+        <tr><td class="mono">F2</td><td><span class="sev crit">Critical</span></td><td><a href="#f2">A connected client can stop receiving static edits entirely until it reconnects</a></td><td>Observed 3 times; mitigated</td></tr>
+        <tr><td class="mono">F3</td><td><span class="sev high">High</span></td><td><a href="#f3">Clients drop when the server stalls ~15 s or more (terrain save); no reconnect</a></td><td>Measured; mitigated</td></tr>
+        <tr><td class="mono">F4</td><td><span class="sev high">High</span></td><td><a href="#f4">Native client loses its connection after a 30-250 s upstream stall, with no auto-reconnect</a></td><td>Observed 8 times; open</td></tr>
+        <tr><td class="mono">F5</td><td><span class="sev high">High</span></td><td><a href="#f5">Client ray/collision data is LOD-quantised to 0.125-0.25 m a few metres from the camera</a></td><td>Measured; tolerances sized</td></tr>
+        <tr><td class="mono">F6</td><td><span class="sev med">Medium</span></td><td><a href="#f6">The edit guard's budget is per frame: the 4th op in one Lua call throws mid-batch</a></td><td>Measured; mitigated</td></tr>
+        <tr><td class="mono">F7</td><td><span class="sev med">Medium</span></td><td><a href="#f7"><code>ForceStatic()</code> throws on the client (rays and Collide)</a></td><td>Confirmed; worked around</td></tr>
+        <tr><td class="mono">F8</td><td><span class="sev med">Medium</span></td><td><a href="#f8">CLI 0.6.5 files API needs a precondition header on every PUT (HTTP 428 for new files)</a></td><td>Fixed in vm-agent-tools</td></tr>
+        <tr><td class="mono">F9</td><td><span class="sev low">Low</span></td><td><a href="#f9">Re-parenting an object keeps its world transform (child cameras land at the parent's feet)</a></td><td>Worked around</td></tr>
+        <tr><td class="mono">F10</td><td><span class="sev low">Low</span></td><td><a href="#f10"><code>Server:GetStreamingStats()</code> reports STALLING / finalRatioPct 0 for healthy clients</a></td><td>Documented</td></tr>
+        <tr><td class="mono">F11</td><td><span class="sev med">Medium</span></td><td><a href="#f11"><code>Cast:Ray</code> with a zero-length vector throws and kills the calling loop</a></td><td>Guarded everywhere</td></tr>
+        <tr><td class="mono">F12</td><td><span class="sev crit">Critical</span></td><td><a href="#f12">Every static edit costs one 30-50 ms server frame whatever its size; &gt;~0.6 edits/s breaks a p99 &lt; 33 ms target</a></td><td>Measured; governor shipped</td></tr>
+        <tr><td class="mono">F13</td><td><span class="sev high">High</span></td><td><a href="#f13">The server-side screenshot client goes stale after a map-scale rebuild (half the map missing)</a></td><td>Observed</td></tr>
+        <tr><td class="mono">F14</td><td><span class="sev crit">Critical</span></td><td><a href="#f14">A freshly joined client receives gameplay edits 12-45 s late; 4 of 10 never arrived at the 2.5 ops/s budget</a></td><td>Measured; designed around</td></tr>
+    </tbody></table></div>
+</section>
+<section id="changelog">
+  <h2>Changelog</h2>
+  <ul class="changelog">
+    <li><b>8 Oct 2026 (latest):</b> F4 count 8 (the 8th disconnect followed a 51.8 s upstream stall with no screenshot involved, so screenshots are not the only trigger). Report is now a living document under the Ashlight edition's site.</li>
+    <li><b>8 Oct 2026:</b> F12 (per-op static edit cost), F13 (stale screenshot client after a map-scale rebuild) and F14 (late edits for freshly joined clients) added from the gameplay delivery bench; F4 updated with the client-log stall evidence (7 occurrences).</li>
+    <li><b>8 Oct 2026 (first edition):</b> F1-F11, from the terrain edit bench (B3/B28/B16) and the first SCAR build.</li>
+  </ul>
+</section>
+<section id="cards">
+  <h2>The 5Ws, per breakage</h2>
+  <article class="record crit" id="f1">
+    <div class="rec-head"><span class="rec-id">F1</span><h3>Static edits reach connected clients through a slow, capped stream</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every player in a world whose terrain changes during play - the whole premise of a destruction FPS.</dd>
+      <dt>What</dt><dd>server-side static edits arrive on a connected client 1-4.5 s later when the stream is idle (6 single 0.8 m removes: 0.9, 4.5, 1.5, 2.5, 3.1, 1.3 s). Under load they queue: a fresh client that is still streaming the map received a single 0.8 m remove somewhere between 30 s and 3 minutes later. After bursts (40 removes at 5/s in one 8 m cell) the client was still wrong at 12-32% of sample points 75 s later, and an 18-crater burst (r 2.5 m) never arrived at all on a client that stayed connected for 15+ minutes (the client showed the cell flat; the server had craters to the pad floor). A client that connected later saw everything at once.</dd>
+      <dt>When</dt><dd>whenever edits are made while clients are connected; worst for bursts and large edits, and while a client is still loading detail (a fresh client was still pulling 68-107 KB/s eight minutes after joining a heavily edited 48 x 32 m pad).</dd>
+      <dt>Where</dt><dd>static voxel streaming (<code>_AmStreaming</code>). <code>Server:GetStreamingStats()</code> shows each client in a <code>STALLING</code> lag state with <code>stallingSendBPS = 500000</code>; the client receives 24-110 KB/s. A paint over the stuck cell, an LOD bubble, moving the camera 600 m away and back, and <code>AE:ReloadGeometry()</code> did not resync it.</dd>
+      <dt>Why</dt><dd>edits are not pushed as small deltas with priority; they wait behind (or are coalesced into) bulk chunk streaming that is rate-capped per client. Under a burst, intermediate versions appear to be dropped and the final version is not always re-sent.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>what a player sees and collides with can differ from the server for seconds to minutes after any dig or blast. Collision divergence drops players into holes that aren't there (or holds them on ground that is gone), and cover differs per player.</p></div>
+      <div><h4>Repro</h4><p><code>bench/run_bench.py</code> (A1-A4 configs: 40 removes at 5/s, r 0.5-2.5 m, one cell, client camera 9 m above). <code>bench/lat1.py &lt;client&gt; x z</code> for one edit.</p></div>
+      <div><h4>Mitigation shipped in SCAR</h4><p><br>• every gameplay edit goes through one scheduler: 4 ops/s global, a 6-op burst, 0.8 s spacing per 8 m cell, a 4 s settle window between remove and add, a 24-op queue cap, and 2 ops per frame at most;<br>• digs are single capsule strokes every 0.9 s (not continuous), and craters are single spheres;<br>• bullets never edit terrain;<br>• a divergence detector probes clients every 5 s at recently edited spots and under their feet, teleports a player standing on ground the server doesn't have, and tightens the budget while divergence is open;<br>• hit occlusion is decided on the server's terrain only.</p></div>
+      <div><h4>Suggested fix</h4><p>version each static chunk and push edits as small high-priority deltas; re-send any chunk whose version a client hasn't acknowledged; expose a per-client "resync region" call and a per-edit delivery callback or acknowledgement.</p></div>
+    </div>
+  </article>
+  <article class="record crit" id="f2">
+    <div class="rec-head"><span class="rec-id">F2</span><h3>A connected client can stop receiving static edits entirely</h3><span class="sev crit">Critical</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any connected client after a burst of terrain edits.</dd>
+      <dt>What</dt><dd>native client #1 received none of 40 removes made at 5/s, nor any later edit (3 pillars of 4 m concrete, several holes) for 15+ minutes. Client #4 showed the same after an 18-op burst. The server-side screenshot client showed every edit.</dd>
+      <dt>When</dt><dd>after edit bursts while connected; seen 3 times in one session.</dd>
+      <dt>Where</dt><dd>static streaming to that client. Reconnecting fixed it every time.</dd>
+      <dt>Why</dt><dd>unknown; consistent with the flow controller (<code>senderRecvLagDeviation</code> pinned at 16383, <code>finalRatioPct = 0</code>) never leaving its stalled state for that client.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>a player in that state plays on a different map for the rest of the session.</p></div>
+      <div><h4>Mitigation</h4><p>the edit budget (F1); the divergence detector counts divergences older than 90 s as unrepaired and tells the player to rejoin (F5 key in the browser).</p></div>
+      <div><h4>Suggested fix</h4><p>recover the flow state, or force a resync of dirty chunks, when a client's streaming has been stalled for N seconds.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="f3">
+    <div class="rec-head"><span class="rec-id">F3</span><h3>Clients drop when the server stalls for ~15 s or more</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>anyone connected or connecting while the server saves its terrain.</dd>
+      <dt>What</dt><dd>a native client that connected just as SCAR's empty-server maintenance ran (reclaim, then a 17.3 s terrain save) was disconnected and did not reconnect. Its log shows "New max ui client message sending time: 11057 ms", then "Connection to server lost".</dd>
+      <dt>When</dt><dd>during any main-thread stall longer than roughly 10-15 s (terrain save B19).</dd>
+      <dt>Where</dt><dd>client/server TCP keepalive.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>the empty-server save window is not safe for players who arrive during it, and the native client offers no reconnect.</p></div>
+      <div><h4>Mitigation</h4><p>maintenance now checks for connected AND pending clients on every step and abandons the reclaim/save when anyone arrives. The traversal check that took one frame (7,569 rays) now runs as one row per frame.</p></div>
+      <div><h4>Suggested fix</h4><p>async terrain save (B19); a longer timeout during a known save; automatic reconnect in the native client.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="f4">
+    <div class="rec-head"><span class="rec-id">F4</span><h3>Native client loses its connection with no auto-reconnect</h3><span class="sev high">High</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>a native client in a long session.</dd>
+      <dt>What</dt><dd>two disconnects not caused by a server stall: 16:40:03 (after "New max ui client message sending time: 29600 ms") and 17:00:06 ("TcpClient::SendMsg: failed to send a message to server" with no preceding gap in the client log; the client was at 88 fps). The window stays open, showing a frozen scene; nothing reconnects.</dd>
+      <dt>When</dt><dd>6 and 17 minutes into play. <b>Update (8 occurrences; the 8th at 19:00 after a 51.8 s stall, with no screenshot involved):</b> the client log shows "New max ui client message sending time" climbing to 29.6 s, 51.8 s, 58 s and 253.6 s before "Connection to server lost"; the server then reports the client gone. The client keeps rendering at 88-100 fps throughout, so it is not frozen; its upstream channel is blocked. Three of the seven followed a <code>screenshot --client</code> capture within seconds to minutes; the others came while the client was streaming terrain heavily (150-216 KB/s downstream, footprint 346 MB and growing) during edit benches. A hidden (throttled) browser tab also fell behind and its divergence probes failed.</dd>
+      <dt>Where</dt><dd><code>TcpClient.cpp:197/317</code>; <code>Client.cpp:2654</code> ("ui client message sending time").</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>long tests and long play sessions end silently; the server keeps the player for a while (B49 ghost).</p></div>
+      <div><h4>Mitigation</h4><p>none possible in game code beyond tolerating rejoin (SCAR restores the player's team, class and score by name).</p></div>
+      <div><h4>Suggested fix</h4><p>automatic reconnect with session resume; surface the disconnect reason.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="f5">
+    <div class="rec-head"><span class="rec-id">F5</span><h3>Client ray and collision data is LOD-quantised a few metres from the camera</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>What</dt><dd>over an untouched flat pad, server and client rays agree exactly; over dug ground 4-11 m from the client camera, client ray heights are higher than the server's in steps of 0.125 m (and some 0.25 m), even with an LOD priority bubble around the area.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>any client-side check of terrain (movement, divergence probes, impact effects) needs a tolerance of 0.3 m or more; "divergence" measured with tighter tolerances is mostly LOD.</p></div>
+      <div><h4>Mitigation</h4><p>the divergence detector uses 0.6 m; the bench reports both 0.3 m and 0.6 m mismatches.</p></div>
+      <div><h4>Suggested fix</h4><p>an API to read the server's height for a column, or a client query at a forced LOD.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="f6">
+    <div class="rec-head"><span class="rec-id">F6</span><h3>The edit guard's budget is per frame, not per op</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>What</dt><dd>a pad reset issued 4 large ops in one Lua call (remove, add, remove, add; ~491 baseline-m2 each). The 4th threw "frame voxel budget exhausted (~697 already issued this frame...)", leaving half the pad removed and not re-added.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>any batch (map builders, resets, reclaim) must spread ops over frames and handle a mid-batch refusal; a naive loop corrupts terrain.</p></div>
+      <div><h4>Mitigation</h4><p>every SCAR batch runs one op (or 2-4 small ops) per frame and retries "budget" refusals on the next frame.</p></div>
+      <div><h4>Suggested fix</h4><p>an option to queue past the budget (deferred to later frames) instead of throwing.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="f7">
+    <div class="rec-head"><span class="rec-id">F7</span><h3><code>ForceStatic()</code> throws on the client</h3><span class="sev med">Medium</span><span class="conf">Why: confirmed</span><a class="back" href="#index">↑ index</a></div>
+    <p><code>Cast:Ray(...):ForceStatic()</code> and <code>Collide(...):ForceStatic()</code> on a client raise "ForceStatic() only available on server". Client code must use plain rays and filter dynamic objects with <code>Ignore</code>. Suggested fix: allow it on clients (the client has static data) or document it.</p>
+  </article>
+  <article class="record med" id="f8">
+    <div class="rec-head"><span class="rec-id">F8</span><h3>CLI 0.6.5 files API requires a precondition on every PUT</h3><span class="sev med">Medium</span><span class="conf"></span><a class="back" href="#index">↑ index</a></div>
+    <p>Uploading a NEW file with no precondition returns HTTP 428. The vm-agent-tools push-only deploy (built against older behaviour) failed for all new files. Fix shipped in <code>vm-agent-tools/cli-ext/vmpush.mjs</code>: <code>createOnly</code> (If-None-Match: *) for new files, etag re-read on conflict.</p>
+  </article>
+  <article class="record low" id="f9">
+    <div class="rec-head"><span class="rec-id">F9</span><h3>Re-parenting keeps the world transform</h3><span class="sev low">Low</span><span class="conf"></span><a class="back" href="#index">↑ index</a></div>
+    <p><code>child.parent = obj</code> keeps the child's world position, so a camera created at the origin and parented to an eye object ended up at the player's feet. Set <code>localPos</code> / <code>localRot</code> after parenting.</p>
+  </article>
+  <article class="record low" id="f10">
+    <div class="rec-head"><span class="rec-id">F10</span><h3>Streaming stats read as stalled for healthy clients</h3><span class="sev low">Low</span><span class="conf"></span><a class="back" href="#index">↑ index</a></div>
+    <p><code>Server:GetStreamingStats()</code> reports <code>senderRecvLagDeviationFlowState = STALLING</code> and <code>finalRatioPct = 0</code> for a freshly connected client that does receive data. The fields are undocumented, so they cannot be used to detect F2.</p>
+  </article>
+  <article class="record med" id="f11">
+    <div class="rec-head"><span class="rec-id">F11</span><h3>A zero-length ray throws</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <p><code>Cast:Ray(p, Vec3(0,0,0)):Run()</code> raises "ray is zero length". Inside a <code>util:schedule</code> chain or an Update loop the error stops the chain silently (the B16 bench's sampler died this way when it picked the same player twice). Gameplay code hits it whenever two positions coincide: a grenade exploding exactly at a chest, a bot aiming at a target standing on it, a projectile at rest. SCAR guards every ray whose vector can be zero. Suggested fix: return nil (no hit) for a zero-length ray, as most engines do.</p>
+  </article>
+  <article class="record crit" id="f12">
+    <div class="rec-head"><span class="rec-id">F12</span><h3>Every static edit costs one 30-50 ms server frame, whatever its size</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every player of a world that edits terrain during play.</dd>
+      <dt>What</dt><dd>single gameplay edits through SCAR's scheduler on an idle server (17 ms frames): dig capsule r 0.7 -&gt; worst frame 30-33 ms; frag sphere r 1.1 -&gt; 30-34 ms; breach sphere r 1.8 -&gt; 50-52 ms; Bloom (3 small adds) -&gt; 25 ms. A sphere with 3.9x the volume of a dig costs the same frame, so the cost is mostly per op, not per voxel. Each op also adds ~40-110 ms of update work spread over the following frames.</dd>
+      <dt>When</dt><dd>every static <code>Vox</code> op (Remove/Add/Paint).</dd>
+      <dt>Where</dt><dd>the commit of a static op (the voxel system flush, LOD rebuild and streaming of the touched chunks).</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>a p99 frame budget of 33 ms allows about one spike frame per 100 frames (0.6/s). Worst-case stress (8 players firing 214 shots/s with lag compensation costs nothing measurable; terrain at ~3.5 ops/s pushes p99 to 39 ms, max 51 ms). Even 1 op/s gives p99 36 ms. Real 8-player bot matches (fewer edits) held p99 16.8 ms for 5 rounds.</p></div>
+      <div><h4>Mitigation shipped</h4><p>fewer, bigger dig strokes (1.2 s, r 0.8); a global budget of 2.5 ops/s; a frame governor that cuts the edit rate to 40% while more than 1% of the last 300 frames exceed 33 ms; bullets never edit terrain.</p></div>
+      <div><h4>Suggested fix</h4><p>amortise the per-op commit (batch ops per frame into one flush, defer LOD rebuilds), or move it to a worker; expose a per-op cost estimate.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="f13">
+    <div class="rec-head"><span class="rec-id">F13</span><h3>The server-side screenshot client goes stale after a map-scale rebuild</h3><span class="sev high">High</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <p>After SCAR's clean rebuild (clear all static terrain, rebuild 112 x 112 m: 9.3k jobs, then a dressing pass) the CLI's default <code>screenshot</code> (rendered by the server-side client) showed only the southern half of the map, with a floating wireframe of edges over the north, unchanged across 4 captures over several minutes and two camera angles. Server rays (the verify script) found all terrain; a freshly connected native client rendered the whole map correctly. This is B3/B28 at map scale (remove then add everywhere while connected), and it means the agent's main visual check is wrong after any big rebuild. Mitigation: verify with server rays and a freshly connected native client. Suggested fix: resync the server-side client's stream after large edits, or reconnect it per screenshot.</p>
+  </article>
+  <article class="record crit" id="f14">
+    <div class="rec-head"><span class="rec-id">F14</span><h3>A freshly joined client receives gameplay edits 12-45 s late</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every player who joined a world within the last several minutes (in a 4-minute-round game: everyone).</dd>
+      <dt>What</dt><dd>bench/gameplay_edit_bench.py on the dressed Scarfield map, native client joined ~2 min earlier, standing 10 m from the edits: single digger (1 stroke/s, one cell) delivered 9/9, latency avg 14.5 s, p90 24 s, max 27 s; the global budget (2.5 ops/s over 6 cells) delivered 6/10 within 60 s (avg 12 s, max 23 s), 4 never arrived; frag craters (1 per 3 s) 8/8, avg 26 s, max 45 s. On the empty off-map pad earlier, a single edit took 1-4.5 s.</dd>
+      <dt>When</dt><dd>while the client is still streaming the map: 74 MB received after 8 minutes, 150-216 KB/s, client footprint 323-346 MB and still growing.</dd>
+      <dt>Where</dt><dd>static streaming: edits are not prioritised over bulk detail streaming (F1).</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>the digger's own hole appears seconds to tens of seconds after the stroke; craters appear long after the blast; collision differs from the server meanwhile.</p></div>
+      <div><h4>Mitigation shipped</h4><p>gameplay never depends on client terrain: exposure, crate pop-up, hit occlusion and validation all use server terrain; the crate surfaces at the hole's rim; dig progress is reported by the server ("CACHE 1.1 m"); client-side dirt/scorch effects play immediately; the divergence detector lifts players out of terrain they are inside of. Lower-resolution static terrain (16 vpm) would quarter the stream, but no such empty terrain asset exists (32/64/128 only).</p></div>
+      <div><h4>Suggested fix</h4><p>push edit deltas ahead of bulk detail streaming; offer a 16 vpm static terrain option.</p></div>
+    </div>
+  </article>
+</section>
+</div></body></html>
