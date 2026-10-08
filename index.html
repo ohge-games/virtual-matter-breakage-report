@@ -107,6 +107,14 @@ pre code { background: none; padding: 0; font-size: inherit; }
 
 footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 6px; }
 
+ol.plain { margin: 0; padding-left: 1.5em; display: grid; gap: 8px; max-width: 72ch; }
+ol.plain ul, ul.plain ul { margin: 4px 0 0; padding-left: 1.2em; display: grid; gap: 3px; }
+.final-status { display: inline-block; justify-self: start; font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0.04em; padding: 5px 10px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 3px; background: var(--surface); }
+.back { margin-left: auto; font-family: var(--font-mono); font-size: 0.7rem; text-decoration: none; color: var(--muted); }
+.back:hover, .back:focus-visible { color: var(--accent); text-decoration: underline; }
+#index { scroll-margin-top: 16px; }
+.autopsy h3 { margin-top: 8px; }
+.autopsy .note { color: var(--muted); font-style: italic; }
 @media (max-width: 560px) {
   h1 { font-size: 1.8rem; }
   .w5 { grid-template-columns: 1fr; gap: 2px; }
@@ -123,30 +131,33 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
 <div class="wrap">
 
 <header>
-  <div class="eyebrow">Stress test · field report · 6 Oct 2026</div>
+  <div class="eyebrow">Stress test · field report · 6–8 Oct 2026 · v33</div>
+  <div class="final-status">Final edition: project paused 2026-10-08</div>
   <h1>Where Virtual Matter Breaks</h1>
-  <p class="lede">I spent one long session building a full multiplayer survival game, Ashlight, on a live Virtual Matter world, then deliberately pushed the engine until it failed. This report gives the Who, What, When, Where and Why for each breakage, plus impact, a repro and a suggested fix. Every number comes from the live server or the connected client.</p>
+  <p class="lede">Over about two days and 21 build rounds I built a full multiplayer survival game, Ashlight, on a live Virtual Matter world, published it to a play server, and deliberately pushed the engine until it failed. This report gives the Who, What, When, Where and Why for each breakage, plus impact, a repro and a suggested fix. Every number comes from the live server or the connected client.</p>
   <div class="facts">
     <span>Framing <b class="mono">9b9ILBOjInycFrZ0KCFn1</b></span>
     <span>Host <b class="mono">voxelhost012</b></span>
     <span>Client <b>Native, Windows, iteration073</b></span>
     <span>Tooling <b>virtualmatter CLI + MCP</b></span>
     <span>Server idle baseline <b>59.5–59.8 fps</b></span>
+    <span>Play server <b>Europe, published</b></span>
   </div>
 </header>
 
 <section>
   <h2>Summary</h2>
-  <p>The engine degraded gracefully under most direct load: rays, RPCs, tiny edits and big memory. It broke in four ways. Each one either caps how big a shared world can get or loses data without telling anyone:</p>
+  <p>Building and stress-testing Ashlight surfaced 61 breakages: 7 Critical, 17 High, 19 Medium and 18 Low. They fall into four themes:</p>
   <ul class="plain">
-    <li><b>Server-driven characters are expensive.</b> The SDK character controller costs about 0.3 ms per NPC per frame, so roughly 40 rigged NPCs take a 60 fps server down to 13 fps.</li>
-    <li><b>Object creation stalls the whole server.</b> Adding 200 voxel objects in one step froze the server for 1.7 s and dropped it to 9.7 fps.</li>
-    <li><b>Nothing has a ceiling.</b> Networked state, the Lua heap and client particles all accept unlimited input until a player feels it. Networked state took 256 MB and gave a 3.6 s ping; the Lua heap reached 3 GB; the particle flood hit 8,000 against a documented 500.</li>
-    <li><b>State can silently diverge or disappear.</b> Hot reload orphans async work, sync overwrote a newer local save, a client lost collision that the server still had, and <code>imagine()</code> jobs stall forever with no error.</li>
+    <li><b>Scale ceilings.</b> The SDK character controller costs about 0.3 ms per NPC per frame, so roughly 40 rigged NPCs take a 60 fps server to 13 fps (<a href="#b1">B1</a>). Creating objects stalls the server (<a href="#b2">B2</a>), every voxel object carries a fixed cost and copies its asset when bound (<a href="#b17">B17</a>, <a href="#b29">B29</a>, <a href="#b42">B42</a>), and the headless client plus idle SDK scripts spend a large share of the frame before any gameplay runs (<a href="#b38">B38</a>, <a href="#b43">B43</a>). Networked state, the Lua heap and client particles have no ceiling (<a href="#b5">B5</a>, <a href="#b6">B6</a>, <a href="#b9">B9</a>).</li>
+    <li><b>Silent data loss and divergence.</b> Hot reload orphans in-flight work and wipes runtime-built objects (<a href="#b8">B8</a>, <a href="#b32">B32</a>). Voxel edits aren't persistent by default, and saving the terrain freezes the server (<a href="#b19">B19</a>, <a href="#b20">B20</a>). Clients keep collision and geometry the server no longer has (<a href="#b3">B3</a>, <a href="#b28">B28</a>). Left-handed parallelepipeds and empty voxel ops vanish without an error (<a href="#b36">B36</a>, <a href="#b37">B37</a>), and clocks and engine types behave differently from the docs (<a href="#b27">B27</a>, <a href="#b41">B41</a>, <a href="#b47">B47</a>).</li>
+    <li><b>The deploy and publish plumbing.</b> <code>sync</code> overwrote newer saves, failed silently after restarts, left orphan processes and pushed partial files into the world (<a href="#b4">B4</a>, <a href="#b21">B21</a>, <a href="#b45">B45</a>, <a href="#b48">B48</a>). Publishing restarted the play server before its files landed and booted the wrong scene (<a href="#b51">B51</a>, <a href="#b52">B52</a>). Server Lua has no stable per-user id (<a href="#b46">B46</a>).</li>
+    <li><b>Restarts with no cause.</b> The server restarted seven times without warning or a reason, once in the middle of a boss fight on the play server (<a href="#b44">B44</a>). The cause was still unknown when the project paused.</li>
   </ul>
+  <p><b>Status:</b> the project was paused on 2026-10-08, with the game live on the published play server. The closing section, "Final autopsy", is the builder's view of the CLI and MCP tooling.</p>
 </section>
 
-<section>
+<section id="index">
   <h2>Breakage index</h2>
   <div class="table-scroll">
     <table>
@@ -194,6 +205,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B40</td><td><span class="sev low">Low</span></td><td><a href="#b40">Inactive objects ignore forced raycasts</a></td><td>Forced ray returns nil</td></tr>
         <tr><td class="mono">B41</td><td><span class="sev high">High</span></td><td><a href="#b41"><code>AE:GetDebugTime()</code> restarts with the server process</a></td><td>Every server restart</td></tr>
         <tr><td class="mono">B42</td><td><span class="sev med">Medium</span></td><td><a href="#b42">Baked rig variants are huge; a periodic freeze came with them</a></td><td class="num">329 MB for 111 variants; any bind 40–360 ms</td></tr>
+        <tr><td class="mono">B43</td><td><span class="sev med">Medium</span></td><td><a href="#b43">The server renders a headless client every frame</a></td><td class="num">~8 ms per frame; ~58 fps at idle</td></tr>
         <tr><td class="mono">B44</td><td><span class="sev high">High</span></td><td><a href="#b44">The server restarts without warning or a reason</a></td><td>7 restarts; one mid-boss-fight on the play server</td></tr>
         <tr><td class="mono">B45</td><td><span class="sev high">High</span></td><td><a href="#b45">After a server restart, sync silently fails every push</a></td><td>HTTP 403 on every push; 3 deploys lost</td></tr>
         <tr><td class="mono">B46</td><td><span class="sev high">High</span></td><td><a href="#b46">Server Lua has no stable per-user id</a></td><td>7 of 7 records were placeholders</td></tr>
@@ -212,7 +224,6 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
         <tr><td class="mono">B59</td><td><span class="sev low">Low</span></td><td><a href="#b59">A clear background with a frame renders as a grey fill</a></td><td>Transparent + border</td></tr>
         <tr><td class="mono">B60</td><td><span class="sev low">Low</span></td><td><a href="#b60"><code>string.upper</code> corrupted a multi-byte character</a></td><td>"—" mangled</td></tr>
         <tr><td class="mono">B61</td><td><span class="sev low">Low</span></td><td><a href="#b61">Generated icon art is unreadable below about 24 px</a></td><td>39 generated icons</td></tr>
-        <tr><td class="mono">B43</td><td><span class="sev med">Medium</span></td><td><a href="#b43">The server renders a headless client every frame</a></td><td class="num">~8 ms per frame; ~58 fps at idle</td></tr>
       </tbody>
     </table>
   </div>
@@ -223,7 +234,7 @@ footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--li
   <h2>The 5Ws, per breakage</h2>
 
   <article class="record crit" id="b1">
-    <div class="rec-head"><span class="rec-id">B1</span><h3>Server NPC capacity tops out near 40</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B1</span><h3>Server NPC capacity tops out near 40</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Every player on a world that runs server-side enemies or companions. It hits any maker who uses the SDK's <code>Examples/Character Controller.lua</code> for NPCs, as the skills docs recommend.</dd>
       <dt>What</dt><dd>Server fps fell from 59.8 to 41.5 at 10 rigged NPCs, 30.4 at 20 and 13.2 at 40. Spawning 20 at once blocked the server for 8.2 s in a single frame. Spawned one at a time, the worst single spawn still took 675 ms.</dd>
@@ -243,7 +254,7 @@ return (AE:GetDebugTime()-t0)*1e6/50  -- ≈299 µs</code></pre></div>
   </article>
 
   <article class="record crit" id="b2">
-    <div class="rec-head"><span class="rec-id">B2</span><h3>Creating voxel objects stalls the whole server</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B2</span><h3>Creating voxel objects stalls the whole server</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>All connected players during any burst of object creation: spawning waves, building, debris, rig assembly.</dd>
       <dt>What</dt><dd>I added objects (one VoxelData plus a 0.3 m sphere each) in steps. Going from 200 to 400 in one step took 1,658 ms and dropped the server to 9.7 fps average and 0.2 fps minimum. Even the 100-object steps hit a 0.5 fps minimum. Afterwards, steady-state cost also grows with count: +300 objects ran at 54.8 fps and +1,000 at 36.9 fps.</dd>
@@ -264,7 +275,7 @@ end  -- watch Time.fps for 4 s</code></pre></div>
   </article>
 
   <article class="record crit" id="b3">
-    <div class="rec-head"><span class="rec-id">B3</span><h3>A client loses collision the server still has</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B3</span><h3>A client loses collision the server still has</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>A connected player standing on terrain that the server rebuilds while they are there.</dd>
       <dt>What</dt><dd>The player fell through a floor that existed on the server. The client's collision and raycasts missed static voxels that the server reported as present.</dd>
@@ -283,7 +294,7 @@ end)  -- stand a client on c</code></pre></div>
   </article>
 
   <article class="record crit" id="b4">
-    <div class="rec-head"><span class="rec-id">B4</span><h3>Sync overwrites a newer local save</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B4</span><h3>Sync overwrites a newer local save</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers and coding agents editing through <code>npx virtualmatter sync</code>.</dd>
       <dt>What</dt><dd>I saved <code>Hollow.lua</code> twice, about 5 s apart. The log shows <i>pushed Hollow.lua</i> and then a run of <i>pulled Hollow.lua</i>. The second local edit was gone from disk, with no conflict file and no warning. Separately, a stopped background sync left its node child running; two syncs then produced <code>.remote-conflict</code> files and pulled a 157 MB <code>.am~</code> temp file into the mirror.</dd>
@@ -302,7 +313,7 @@ tail -2 X.lua   # "-- b" is missing</code></pre></div>
   </article>
 
   <article class="record high" id="b5">
-    <div class="rec-head"><span class="rec-id">B5</span><h3>Networked tables accept any payload size</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B5</span><h3>Networked tables accept any payload size</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Every client of a world whose script writes large values into a <code>util:makeNetworkedTable</code> field.</dd>
       <dt>What</dt><dd>A 16 MB string was written in 94 ms. 64 MB and 256 MB strings were also accepted and delivered. At 256 MB the client's ping rose to 3.57 s, freezing input and replication for every player. It recovered once I cleared the field.</dd>
@@ -319,7 +330,7 @@ tail -2 X.lua   # "-- b" is missing</code></pre></div>
   </article>
 
   <article class="record high" id="b6">
-    <div class="rec-head"><span class="rec-id">B6</span><h3>The server Lua heap has no ceiling</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B6</span><h3>The server Lua heap has no ceiling</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Whole sessions. A runaway script can starve the host process that every player shares.</dd>
       <dt>What</dt><dd>The Lua heap grew to 3,072 MB with no limit, taking the process to 21.7 GB. A <code>run-lua</code> call that blocked the main thread ran past the 60 s CLI timeout. After freeing, Lua dropped to 9 MB, but the process stayed roughly 0.3 GB above its earlier footprint. Over the whole session, server memory rose from 6.1 GB to about 19 GB.</dd>
@@ -338,7 +349,7 @@ end</code></pre></div>
   </article>
 
   <article class="record high" id="b7">
-    <div class="rec-head"><span class="rec-id">B7</span><h3><code>imagine()</code> jobs stall forever, silently</h3><span class="sev high">High</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B7</span><h3><code>imagine()</code> jobs stall forever, silently</h3><span class="sev high">High</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers and agents generating assets.</dd>
       <dt>What</dt><dd>Of 11 concurrent jobs, 5 finished quickly and 6 sat at 0% for over 20 minutes. Some prompts never progressed at all ("shadow creature … horror", "iron staff with hook"); reworded, they finished in about 75 s. No job ever fired an error, timeout or failure callback.</dd>
@@ -356,7 +367,7 @@ end  -- 6 never progress</code></pre></div>
   </article>
 
   <article class="record high" id="b8">
-    <div class="rec-head"><span class="rec-id">B8</span><h3>Hot reload orphans everything in flight</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B8</span><h3>Hot reload orphans everything in flight</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Players in a world that is edited live, plus makers running long builds.</dd>
       <dt>What</dt><dd>Saving any <code>.lua</code> file re-runs every script, and anything async is lost: Vox job queues, <code>util:schedule</code> chains and <code>imagine()</code> callbacks. With 40 NPCs alive, one save dropped the server to 0.39 fps for several seconds, and every NPC instance was orphaned.</dd>
@@ -374,7 +385,7 @@ end  -- 6 never progress</code></pre></div>
   </article>
 
   <article class="record med" id="b9">
-    <div class="rec-head"><span class="rec-id">B9</span><h3>The documented particle cap isn't enforced</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B9</span><h3>The documented particle cap isn't enforced</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Players on lower-end clients during heavy effects.</dd>
       <dt>What</dt><dd>The docs say "max 500 particles". The client accepted 500, 2,000 and 8,000 in a single call. Client fps went from about 34–43 to 29.2 at 500, 26.2 at 2,000 (minimum 15.7) and 12.7 at 8,000 (minimum 5.4).<br><br><b>Update:</b> a client profile during play showed the SDK's own Particle Updater script costing about 50 µs per live particle: 11.5 ms of the frame at 219 particles. Game-side caps (200, 140 or 80 by graphics tier, 40 for ambient effects) brought client frames from about 41.6 ms to 28–39 ms together with lower shadow quality.</dd>
@@ -391,7 +402,7 @@ for i=1,8000 do ps:addParticle(p, {lifetime={5,6}}) end</code></pre></div>
   </article>
 
   <article class="record med" id="b10">
-    <div class="rec-head"><span class="rec-id">B10</span><h3>Scene-wide LOD starvation</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B10</span><h3>Scene-wide LOD starvation</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Every client in a scene with many prioritized dynamic objects.</dd>
       <dt>What</dt><dd>About 48 objects with <code>prioritizeLod = true</code> (lodBias 5) collapsed the whole scene's LOD on the client into giant blocks, including the hub fire 7 m from the camera. Removing them restored detail. lodBias 3 per character, without the prioritize flag, was fine.</dd>
@@ -408,7 +419,7 @@ for i=1,8000 do ps:addParticle(p, {lifetime={5,6}}) end</code></pre></div>
   </article>
 
   <article class="record med" id="b11">
-    <div class="rec-head"><span class="rec-id">B11</span><h3>Transforms that don't replicate</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B11</span><h3>Transforms that don't replicate</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers building attached gear, props or rigs.</dd>
       <dt>What</dt><dd>A child object created on the server with scale 0.089 showed up on clients at scale 1.0, producing a mace 11 times too big. Plain objects without a character controller showed up on clients at (0,0,0).</dd>
@@ -425,7 +436,7 @@ c.scale = 0.089   -- client reads 1.0</code></pre></div>
   </article>
 
   <article class="record med" id="b12">
-    <div class="rec-head"><span class="rec-id">B12</span><h3>Persisted tables come back opaque</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B12</span><h3>Persisted tables come back opaque</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone persisting game state.</dd>
       <dt>What</dt><dd><code>Config:TempSet(key, table)</code> comes back as an opaque <code>sol.LuaTable</code> userdata that can't be indexed or iterated. <code>component.varsTable</code> can't be iterated with <code>pairs</code>, and <code>vt.field</code> returns nil for values set with <code>setSerializeVar</code>.</dd>
@@ -443,7 +454,7 @@ return type(t), t.a  -- userdata, error</code></pre></div>
   </article>
 
   <article class="record med" id="b13">
-    <div class="rec-head"><span class="rec-id">B13</span><h3>Edit guard estimates are hard to predict</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B13</span><h3>Edit guard estimates are hard to predict</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers and agents building terrain or structures.</dd>
       <dt>What</dt><dd>A thin cylinder (r 17, h 0.55) was estimated at about 3,195 baseline-m² and rejected, while a sphere of r 6.5 was accepted. A sphere of r 10 was rejected because about 505 m² had already been issued that frame. Single spheres passed up to r 8–11, were soft-rejected at r 12–17 and hard-refused at r 24 and above.</dd>
@@ -460,7 +471,7 @@ return type(t), t.a  -- userdata, error</code></pre></div>
   </article>
 
   <article class="record" id="b14">
-    <div class="rec-head"><span class="rec-id">B14</span><h3>Editor Tools fail at boot</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B14</span><h3>Editor Tools fail at boot</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Every world on this build.</dd>
       <dt>What</dt><dd>Five errors on every boot: <code>Editor.lua:63</code> events read-only (memoryPressure), <code>Transform Gizmo.lua:260</code> onSnapChanged nil, <code>Shape Manager.lua:220</code> onPermissionChanged nil, <code>Editor.lua:785</code> onSnapChangedTrigger nil, <code>Events.lua:742</code> triggerLocally nil.</dd>
@@ -476,7 +487,7 @@ return type(t), t.a  -- userdata, error</code></pre></div>
   </article>
 
   <article class="record" id="b15">
-    <div class="rec-head"><span class="rec-id">B15</span><h3>Docs and runtime disagree</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B15</span><h3>Docs and runtime disagree</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Agents and makers who follow the skills docs.</dd>
       <dt>What</dt><dd><code>Scene:CreateMaterial</code> is documented and used by a skill, but nil at runtime. <code>Button.onPress</code> expects an event-name string; the function form is <code>onPressEx</code>. Generated models face −Z, while the skill says +Z. The particle cap of 500 is documented but not enforced (B9).</dd>
@@ -491,7 +502,7 @@ return type(t), t.a  -- userdata, error</code></pre></div>
     </div>
   </article>
   <article class="record crit" id="b16">
-    <div class="rec-head"><span class="rec-id">B16</span><h3>Moving voxel objects plus raycasts spike the server</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B16</span><h3>Moving voxel objects plus raycasts spike the server</h3><span class="sev crit">Critical</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Every player in a world with server-driven moving characters that also use server raycasts, which describes almost any game with AI.</dd>
       <dt>What</dt><dd>With 24 rigged enemies (6 voxel objects each) moving on the server, 15–27 frames in every 8 s took 50–245 ms, and average fps fell to 40. The game was otherwise identical. Moving the objects without raycasts: 54.9 fps, no spikes. Raycasts without moving: 54.4 fps, no spikes. Both together: the spikes return.</dd>
@@ -510,7 +521,7 @@ return type(t), t.a  -- userdata, error</code></pre></div>
   </article>
 
   <article class="record high" id="b17">
-    <div class="rec-head"><span class="rec-id">B17</span><h3>Fixed per-object cost and very little headroom</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B17</span><h3>Fixed per-object cost and very little headroom</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Any world with animated characters built from several voxel parts.</dd>
       <dt>What</dt><dd>Each active dynamic VoxelData costs about 21 µs per server frame, even when it doesn't move: 260 rig parts cost 5.4 ms. Inactive objects are effectively free, and switching off 22 hidden template roots saved about 1 ms. <code>editable = false</code> changes nothing. An idle edit session already uses 11.4–12 ms of update time: editor tools Lua is about 1.8 ms (the undo History script alone 0.9 ms), and the server's own screenshot camera adds about 2.6 ms of render and blit. That leaves roughly 4 ms for the game at 60 fps.</dd>
@@ -527,7 +538,7 @@ return type(t), t.a  -- userdata, error</code></pre></div>
   </article>
 
   <article class="record med" id="b18">
-    <div class="rec-head"><span class="rec-id">B18</span><h3>Clients can't instance voxel assets</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B18</span><h3>Clients can't instance voxel assets</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers who want animated characters without paying B17 on the server.</dd>
       <dt>What</dt><dd>On the client, <code>AE:GetAssets()</code> returns none of the world's rig assets: 0 of the 150 the server lists. The client <code>VoxelData.data</code> is nil, and a template's <code>.asset</code> reads nil. A client can't create local copies of character parts, so every animated limb has to be a server object.</dd>
@@ -545,7 +556,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record crit" id="b19">
-    <div class="rec-head"><span class="rec-id">B19</span><h3>Saving the terrain freezes the server for 33 seconds to over a minute</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B19</span><h3>Saving the terrain freezes the server for 33 seconds to over a minute</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Everyone connected when a world saves its terrain.</dd>
       <dt>What</dt><dd><code>VoxelData:Save()</code> on the static terrain (a 160 m map at 32 vpm, a 250 MB <code>.am</code>) blocked the main thread past the CLI's 60 s timeout. The CLI returned HTTP 504 and the world was frozen until the save finished. Sync then pulled a 100–120 MB <code>.am~</code> temp file into the local mirror.<br><br><b>Update:</b> a QA frame sampler happened to straddle one of the Terrain Keeper's automatic saves on an empty server. It recorded a single 33,415 ms frame (10.3 fps averaged over its 8 s window), and every <code>run-lua</code> in that window returned HTTP 504. The same 250 MB map therefore stalls the main thread for anywhere from about 33 s to over 60 s.</dd>
@@ -561,7 +572,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b20">
-    <div class="rec-head"><span class="rec-id">B20</span><h3>Gameplay voxel edits aren't persistent by default</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B20</span><h3>Gameplay voxel edits aren't persistent by default</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Players who dig, salvage, build or destroy, which in a voxel game is everyone.</dd>
       <dt>What</dt><dd>After hours of play the static terrain reported <code>isSaved = false</code>. Only the scene hierarchy had been saved every 2 minutes, which excludes voxels. A restart would revert salvaged walls, burned blight, broken ruins and dug holes. Systems that rebuild from saved game state (homes, blight, arena) would then re-add geometry on top of the reverted terrain. Players see walls that pop back up, and growth that stacks.<br><br><b>Update:</b> dynamic objects lose procedural voxels too. After a server restart, all 12 oil drums (<code>save = true</code>, each built from four <code>Vox:Add</code> cylinders with <code>Force(obj)</code>) were back in the scene, active and with their VoxelData component, but with volume 0, zero bounds and no asset: invisible, with no error. The scene's dynamic-prop count went from 37 to 25.</dd>
@@ -577,7 +588,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b21">
-    <div class="rec-head"><span class="rec-id">B21</span><h3>The sync overwrite race happened again</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B21</span><h3>The sync overwrite race happened again</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone editing through <code>npx virtualmatter sync</code>, especially coding agents that save quickly.</dd>
       <dt>What</dt><dd>Two quick edits to <code>Terrain Keeper.lua</code>: the second was partly lost when sync pulled the echo of the first back over it. One fix was missing from disk with no conflict file. Same mechanism as B4.</dd>
@@ -593,7 +604,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b22">
-    <div class="rec-head"><span class="rec-id">B22</span><h3>Hidden browser tabs throttle the client</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B22</span><h3>Hidden browser tabs throttle the client</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Players with the game in a background browser tab, and anyone measuring client performance.</dd>
       <dt>What</dt><dd>The connected WASM client measured 6–12 fps even with no enemies, against 34–43 earlier. The client stays connected while throttled, so its player keeps existing in the world.</dd>
@@ -609,7 +620,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b23">
-    <div class="rec-head"><span class="rec-id">B23</span><h3>Polled input drops fast taps</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B23</span><h3>Polled input drops fast taps</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Players on slow or throttled clients, and anyone using automation or accessibility tools that send quick taps.</dd>
       <dt>What</dt><dd>The engine's <code>events.keyDown</code> listener received "F", but <code>Input:KeyDown("F")</code>, which the SDK's controllers poll, never returned true. The lantern didn't light.</dd>
@@ -625,7 +636,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b24">
-    <div class="rec-head"><span class="rec-id">B24</span><h3>Generated audio reaches clients slowly</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B24</span><h3>Generated audio reaches clients slowly</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Players connected while new sounds or music are added.</dd>
       <dt>What</dt><dd>Fal generated 14 of 14 clips without a failure: 11 sound effects of 20–240 KB, and 3 music tracks of 3.4–4.7 MB. A browser client that connected afterwards listed none of them at first, then 7 of 14 about 3 minutes later.</dd>
@@ -641,7 +652,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b25">
-    <div class="rec-head"><span class="rec-id">B25</span><h3>The platform's popup covers the game's HUD</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B25</span><h3>The platform's popup covers the game's HUD</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Browser players.</dd>
       <dt>What</dt><dd>The website-drawn "Running slow in this browser?" card (about 200×120 px at 1280×720, bottom-left) sits on top of the game's vitals panel until dismissed. Games can't see it or move it.</dd>
@@ -657,7 +668,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b26">
-    <div class="rec-head"><span class="rec-id">B26</span><h3>The screenshot tool can't show final visuals</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B26</span><h3>The screenshot tool can't show final visuals</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers and coding agents verifying graphics and animation.</dd>
       <dt>What</dt><dd><code>virtualmatter screenshot</code> renders with the server's headless client. It skips the game's custom light pass, streams rigs at very low LOD, and poses characters at whatever rate the game allows there. <code>--target</code> refuses objects without their own voxels, such as rig roots. The browser editor link renders correctly, but it stalls whenever its tab or pane is hidden (B22), and its canvas lives in an iframe that page-level automation can't send held keys to.</dd>
@@ -673,7 +684,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b27">
-    <div class="rec-head"><span class="rec-id">B27</span><h3><code>Time.time</code> restarts on every Lua reload</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B27</span><h3><code>Time.time</code> restarts on every Lua reload</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Any script that stores a timestamp somewhere that outlives the Lua state: <code>Config</code>, serialized fields or a ledger.</dd>
       <dt>What</dt><dd>After hours of uptime, <code>Time.time</code> read 92 s, while <code>AE:GetDebugTime()</code> read 59 661 s. The Terrain Keeper stored its last-save time in <code>Config</code>. After a hot reload that time lay in the future ("last full save −64 s ago"), which would have blocked the next save for as long as the world had been running.</dd>
@@ -689,7 +700,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record crit" id="b28">
-    <div class="rec-head"><span class="rec-id">B28</span><h3>Clients keep showing terrain the server has removed</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B28</span><h3>Clients keep showing terrain the server has removed</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone connected while a large terrain edit happens, whether it is far from their camera or right in front of it.</dd>
       <dt>What</dt><dd>A two-pass rebuild of the map's 160 m boundary (about 5 500 static ops) first left, then cleared, debris over the edge band. Afterwards the screenshot client still showed rows of rocks, pillars and brick hanging in the sky over the south and south-west edges. On the server, a 2 m grid of downward rays found no voxels above cliff height there (only the Spire tower), and no objects. The client was drawing terrain that no longer exists.<br><br><b>Update:</b> it also happens close up. After about 600 static edits in the hub (rebuilding the Emberheart and paving the plaza), the screenshot client drew a large blocky "room" filling the view at roughly (0, 0–6, 5–12), inside Cinderhold. On the server, a horizontal ray from (0, 4, 14) toward −Z hit nothing, and downward rays at z = 5–13 all found the plaza floor at y = 0.34.</dd>
@@ -705,7 +716,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b29">
-    <div class="rec-head"><span class="rec-id">B29</span><h3>Every voxel object deep-copies its asset on the main thread</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B29</span><h3>Every voxel object deep-copies its asset on the main thread</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Every player whenever a character, prop or piece of debris is spawned.</dd>
       <dt>What</dt><dd>Spawning one 5-part enemy rig froze the server for about 320 ms. Profiling showed <code>vd.asset = template.asset</code> at 33–83 ms per part, and <code>CreateObject</code> + <code>AddComponent</code> at about 11 ms. <code>Scene:CloneObject</code> was no cheaper (56–96 ms per part). Assigning the same asset a second time cost 75 ms again.</dd>
@@ -747,7 +758,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b30">
-    <div class="rec-head"><span class="rec-id">B30</span><h3>The SDK character controller jumps 2.5 m and has no slope limit</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B30</span><h3>The SDK character controller jumps 2.5 m and has no slope limit</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers who use the example character controller as shipped, and their level designers. Ashlight's players use it unmodified.</dd>
       <dt>What</dt><dd><code>Examples/Character Controller.lua</code> defaults to <code>jumpHeight = 2.5</code> (the apex, in metres) and <code>maxStepHeight = 0.5</code>, and has no slope limit: steepness is handled only by the ground probe and step-up. A wall has to stand more than about 2.6 m above the highest foothold in front of it to stop a player, not 2.5 m.</dd>
@@ -757,13 +768,13 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Boundaries and "impassable" ruin walls that look tall enough can be jumped. Small interior spaces can't use ledges to gate progress at all: no ledge inside a 3 m crypt stops a 2.5 m jump.</p></div>
-      <div><h4>Mitigation</h4><p>Game-side wall heights. The map edge keeps at least 2.9 m above the highest foothold (a 0.4 m margin over the apex). The Undercroft crypt uses a one-way door instead of a ledge. Lowering <code>charCtrl.jumpHeight</code> to about 1.2 m is under consideration.</p></div>
+      <div><h4>Mitigation</h4><p>Game-side wall heights. The map edge keeps at least 2.9 m above the highest foothold (a 0.4 m margin over the apex). The Undercroft crypt uses a one-way door instead of a ledge. Lowering <code>charCtrl.jumpHeight</code> to about 1.2 m was considered.</p></div>
       <div><h4>Suggested fix</h4><p>Ship a human-scale default jump (about 1–1.2 m), add a configurable maximum walkable slope, and document the jump apex next to level-design guidance in the skills.</p></div>
     </div>
   </article>
 
   <article class="record med" id="b31">
-    <div class="rec-head"><span class="rec-id">B31</span><h3>Scaled rig parts: forced rays miss them and their units don't match the world</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B31</span><h3>Scaled rig parts: forced rays miss them and their units don't match the world</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone adding voxel detail to a segmented character at runtime (armour, damage, decals), and anyone who tests that code offline first.</dd>
       <dt>What</dt><dd>Armour stamped live onto a Warden rig came out as an oversized, boxy shell of plates that hid the head, although it passed every offline mock. On the live rig, every part (head, torso, shin) has scale 0.1926 and the same position as the root; each part's shape is offset inside its own voxel space. A ray with <code>Force(shinPart)</code> hit nothing at a point where the same ray without <code>Force</code> hit the shin at 1.29 m.</dd>
@@ -773,13 +784,13 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>Runtime character customisation is error-prone, and offline tests give false confidence unless they model scaled flat parts. The failure is visual and only shows on a live client.</p></div>
-      <div><h4>Mitigation</h4><p>The armour visuals were reverted within minutes, before any player saw them. They are being rebuilt from measurements taken on the live parts instead of assumed offsets, and offline mocks now have to model scaled flat parts.</p></div>
+      <div><h4>Mitigation</h4><p>The armour visuals were reverted within minutes, before any player saw them. They were later rebuilt from measurements taken on the live parts, and now stamp slowly onto small shells (B42); offline mocks have to model scaled flat parts.</p></div>
       <div><h4>Suggested fix</h4><p>Make <code>Force(obj)</code> rays honour the object's scale, and expose helpers that convert between world, local and voxel space per object (for example <code>obj:WorldToVoxel(p)</code>). Document the flat-rig convention, including where a part's geometry sits, in the segmented-character skill.</p></div>
     </div>
   </article>
 
   <article class="record med" id="b32">
-    <div class="rec-head"><span class="rec-id">B32</span><h3>Every Lua reload destroys runtime-built objects</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B32</span><h3>Every Lua reload destroys runtime-built objects</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Any game that pre-builds pools or staged assets at runtime, and every player online when a script is deployed.</dd>
       <dt>What</dt><dd>After a hot reload (a file save or <code>Server:LuaReset</code>), the six pooled Hollow rigs were already gone before the game script's <code>Start()</code> ran. They were inactive, parked at y = −60, with <code>save = false</code>. A debug-logged scan of <code>Scene:GetAllObjects()</code> in <code>Start()</code> found none of them. The pool then rebuilt from scratch: one rig ready at t = 4 s, all six at t = 16 s.</dd>
@@ -795,7 +806,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b33">
-    <div class="rec-head"><span class="rec-id">B33</span><h3>No per-object time scale, and no gradient or vignette in the UI</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B33</span><h3>No per-object time scale, and no gradient or vignette in the UI</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers building melee combat feel and screen-space damage feedback.</dd>
       <dt>What</dt><dd>Melee hit-stop needs the striker's and the victim's animation to pause for about 60–120 ms while the world keeps running. The engine offers only the global <code>Time.timeScale</code>, which slows every object, the server simulation and every client. Screen-edge damage feedback hits a similar gap: MUI panels are flat colours, with no gradient or vignette primitive.</dd>
@@ -811,7 +822,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b34">
-    <div class="rec-head"><span class="rec-id">B34</span><h3>New scripts can't be attached for about a minute after they sync</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B34</span><h3>New scripts can't be attached for about a minute after they sync</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers and agents who add a new script file and attach it straight away.</dd>
       <dt>What</dt><dd><code>AddScript("Ashlight/Combat FX.lua")</code>, run right after the file synced, failed with "Script file does not exist". The same call worked about a minute later, once the server had written the file's <code>.zma</code> metadata (seen as <code>Combat FX.lua.zma</code> appearing in the mirror).</dd>
@@ -827,7 +838,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b35">
-    <div class="rec-head"><span class="rec-id">B35</span><h3>A coding harness can't run automated playtests</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B35</span><h3>A coding harness can't run automated playtests</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Agents and makers who build through the CLI and want to test gameplay without a human at the keyboard.</dd>
       <dt>What</dt><dd>Two problems. First, over about 10 minutes, roughly 1 in 3 CLI <code>run-lua</code> and <code>errors</code> calls returned "fetch failed" with no HTTP status, then worked on retry. Second, a native client launched with <code>virtualmatter open</code> joins in edit mode: its player character is spawned but not simulated, so neither a client-side <code>charCtrl:setPosition</code> nor server-side writes move it.<br><br><b>Update (QA):</b> after a server restart, about 1 in 6 read-only <code>run-lua</code> calls (0.1–1 s of work each) returned only "fetch failed": no HTTP status and no engine error, unlike the 504 timeout. An identical retry 15–20 s later succeeded every time. There is no way to tell whether the failed call's code ran.</dd>
@@ -843,7 +854,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b36">
-    <div class="rec-head"><span class="rec-id">B36</span><h3>Left-handed parallelepipeds silently build nothing</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B36</span><h3>Left-handed parallelepipeds silently build nothing</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone building oriented boxes with <code>Shape.Parallelepiped(center, a, b, c)</code>: cliff facets, banners, lids, armour plates.</dd>
       <dt>What</dt><dd>When the three axes are left-handed (<code>dot(a, cross(b, c)) &lt; 0</code>), the Vox op runs, returns no error, and adds, removes or paints no voxels. A parallelepiped is symmetric, so the same box with <code>c</code> negated (right-handed) builds normally. The World Dresser built every north and east edge facet with left-handed axis triples, (1,0,0)/(0,1,0)/(0,0,−1) and (0,0,1)/(0,1,0)/(1,0,0). All 327 of them are missing live: the north and east cliffs, the north and east runs of the NW and SE corners, and 4 plaza banners. Every right-handed facet on the south and west edges stands, and the rubble placed on top of the missing facets floats at y = 8–9. Two sarcophagus lids in the Undercroft and six arch and coping pieces on the Refuge islands are missing for the same reason.<br><br><b>Update:</b> the damage was wider. Every Hearth edge piece (wall, doorway wall, window wall and door) was a left-handed parallelepiped, so player homes have never had walls or doors: they were roofs on foundations. Also missing: 18 of the 38 Spire-lair pieces, the Colossus's left-arm plates, the Matron's robe train, the Abbot's scythe blade, and every crust cavity and crack line in the Deep Arena, so its crust cells never really opened. The SDK's own <code>Script Load Helper/Explosion.lua</code> builds about half of its debris shapes empty for the same reason. Armour and weapon plates were checked and are unaffected: they are built as (t, n × t, n), which is always right-handed (0 of 955 armour plates were left-handed).</dd>
@@ -859,7 +870,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b37">
-    <div class="rec-head"><span class="rec-id">B37</span><h3>Voxel ops never report an empty result</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B37</span><h3>Voxel ops never report an empty result</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone building worlds procedurally through the Vox API.</dd>
       <dt>What</dt><dd>Neither <code>Run()</code> nor <code>OnFinished</code> reports how many voxels an op changed. A degenerate shape (a left-handed parallelepiped as in B36, a zero-size box, or an op wholly outside its VoxelData) fails silently, and the op queue still reports it as done.</dd>
@@ -875,7 +886,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b38">
-    <div class="rec-head"><span class="rec-id">B38</span><h3>SDK editor scripts cost about 3 ms per server frame when idle</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B38</span><h3>SDK editor scripts cost about 3 ms per server frame when idle</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Every world, whether or not anyone is playing.</dd>
       <dt>What</dt><dd>The script profiler on the live server, with nobody online, showed five SDK and editor scripts taking 3.0 ms per frame between them: Chat 1.25 ms, Click To Play Prompt 0.80 ms, Particle Updater 0.51 ms, Voxelizer 0.29 ms and Shape Manager 0.17 ms. All of Ashlight's game scripts together took under 0.6 ms.</dd>
@@ -891,7 +902,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b39">
-    <div class="rec-head"><span class="rec-id">B39</span><h3>Server memory climbs on an idle, empty server</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B39</span><h3>Server memory climbs on an idle, empty server</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Long-running worlds, and hosts that pack several worlds per machine.</dd>
       <dt>What</dt><dd>QA memory samples after a restart showed the server process growing from 12.6 GB to 15.9 GB over 75 minutes with nobody online. The largest grower was the Voxel DB atlas, from 3.76 GB to 5.0 GB (about 17 MB per minute). The surface store and the Lua heap stayed flat. Before the previous restart, memory had plateaued at about 20.8 GB.<br><br><b>Update:</b> the atlas then held at exactly 5,000 MB for over 25 minutes, which looks like an engine cap. Total memory reached 16.5 GB and kept growing at about 7 MB per minute after the atlas stopped; the surface store was 5,251 MB and the Lua heap 12.4 MB. Idle performance stayed healthy throughout: 57.7–58.4 fps, 11.3–11.5 ms per update, worst frame 22–27 ms.</dd>
@@ -901,13 +912,13 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>An idle world gains gigabytes of memory, so its footprint depends on how long it has been up rather than on what players are doing. If the plateau doesn't hold, a long-running world eventually runs out of memory.</p></div>
-      <div><h4>Mitigation</h4><p>The atlas is confirmed capped; the residual growth is still being watched. Nothing in game code touches either. With sessions running, memory grew faster: 13.2 GB after a restart to 16.7 GB 30 minutes later (limit 32 GB).</p></div>
+      <div><h4>Mitigation</h4><p>The atlas is confirmed capped; the residual growth was still unexplained when the project paused. Nothing in game code touches either. With sessions running, memory grew faster: 13.2 GB after a restart to 16.7 GB 30 minutes later (limit 32 GB).</p></div>
       <div><h4>Suggested fix</h4><p>Cap the atlas with a documented, configurable budget, and expose its size and eviction counts through <code>Server:GetMemoryUsage()</code>.</p></div>
     </div>
   </article>
 
   <article class="record" id="b40">
-    <div class="rec-head"><span class="rec-id">B40</span><h3>Inactive objects ignore forced raycasts</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B40</span><h3>Inactive objects ignore forced raycasts</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone measuring or decorating pooled or template objects while they are parked out of sight.</dd>
       <dt>What</dt><dd><code>Cast:Ray(...):Force(obj):Run()</code> returns nil for an object that is not <code>activeInHierarchy</code>, even with the right transform and voxels. This was seen on Rig Library templates and on pooled enemy rigs.</dd>
@@ -923,7 +934,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b41">
-    <div class="rec-head"><span class="rec-id">B41</span><h3><code>AE:GetDebugTime()</code> restarts with the server process</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B41</span><h3><code>AE:GetDebugTime()</code> restarts with the server process</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Any game that persists timestamps across server restarts: respawn timers, cooldowns, rate limits, save schedules.</dd>
       <dt>What</dt><dd>The server restarted unexpectedly at about 22:24. Memory was at 13.1 of 32 GB, so it wasn't out of memory, and the cause is unknown. Right afterwards, <code>AE:GetDebugTime()</code> read 79 s: it is process uptime, not wall-clock time. Every timer Ashlight had persisted as "wall clock" was wrong after the restart: the Abbot's 45-minute respawn, the siege's once-an-hour limit, the Omen ward and Abbot-stirs timers, and the Terrain Keeper's save gaps. Game state saved every 2 minutes was reloaded from its last disk save, so a one-shot world repair made just before (re-seating a stacked home) was reverted.</dd>
@@ -939,7 +950,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b42">
-    <div class="rec-head"><span class="rec-id">B42</span><h3>Baked rig variants are huge, every bind stalls a frame, and a periodic freeze came with them</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B42</span><h3>Baked rig variants are huge, every bind stalls a frame, and a periodic freeze came with them</h3><span class="sev med">Medium</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Games that bake cosmetic detail into rig assets to avoid runtime voxel cost (B29), their makers' mirrors, and every client that streams the assets.</dd>
       <dt>What</dt><dd><code>VoxelData:SaveAs</code> on a scaled rig part stores the part at its fine internal resolution, so every baked variant is a full copy. Mace tiers came to about 7 MB each, and the 111 armour and weapon variants to 329 MB of <code>.am</code> assets, all of which sync to the maker's mirror and have to stream to clients. Separately, the patch that switched characters over to the baked armour introduced a freeze of about 700 ms every 8.4 s on an idle server, with the heap growing about 2 MB per freeze and no game Lua running inside it. Reverting that patch fixed it at once (58.2 fps, worst frame 28 ms).<br><br><b>Update:</b> the freeze came from bake code inside the character script, not from the assets themselves. With that code removed, an A/B test showed no freezes in about 7,000 frames both with and without the baked templates loaded. Binding a baked part still costs 100–500 ms each (forging from full baked part copies: 5 frames over 50 ms, worst 502 ms).<br><br><b>Update (armour shells):</b> to shrink the binds, only the armour voxels were baked onto small, separate "shell" objects at the part's scale, about 20–35% of a part. Binding them still blocked the server frame for 40–360 ms, almost regardless of size:</dd>
@@ -964,14 +975,14 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <dt>Why</dt><dd>The size follows from the scaled part's internal resolution (see B29 and B31). The bind cost is engine-side and synchronous. The freeze is not proven, but it correlates with heavy <code>SaveAs</code> use: both sessions that ran 75–111 bakes then showed a ~700 ms engine-side frame every ~8 s at idle (heap +2 MB each time), a Lua reload cleared it, and sessions that only bound assets never showed it.</dd>
     </dl>
     <div class="extra">
-      <div><h4>Impact</h4><p>Baking trades a voxel-commit stall for disk, sync and streaming size, and here also for a periodic server-wide freeze. Neither runtime stamping (B29) nor baking is currently a clean way to give characters per-tier detail.</p></div>
+      <div><h4>Impact</h4><p>Baking trades a voxel-commit stall for disk, sync and streaming size, and here also for a periodic server-wide freeze. Neither runtime stamping (B29) nor baking was a clean way to give characters per-tier detail; the eventual answer was slow live stamping onto small shells.</p></div>
       <div><h4>Mitigation</h4><p>Armour no longer binds or saves assets at all: it is stamped live onto small shells at one op per frame (47 fps, worst frame about 50 ms, over about 35 s per full set), and an idle server showed no freezes over 100 ms in 6,957 frames afterwards. The 111 baked variants (329 MB) and the 75 shell templates (60 MB) were deleted. Hollow crusts keep their three baked torso variants, which are bound once at pool time, never mid-fight.</p></div>
       <div><h4>Suggested fix</h4><p>Let <code>SaveAs</code> resample to a target resolution, or support instancing and sharing of voxel data between variants. Keep any periodic asset scan incremental, and expose its cost in the engine timers.</p></div>
     </div>
   </article>
 
   <article class="record med" id="b43">
-    <div class="rec-head"><span class="rec-id">B43</span><h3>The server renders a headless client every frame</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B43</span><h3>The server renders a headless client every frame</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Every world, at all times.</dd>
       <dt>What</dt><dd>Engine timers on the live server with nobody online: Update Frame (server) 9.8 ms, <b>Render Frame 6.2 ms</b>, <b>Update Frame (FirstScene) 1.7 ms</b>, and Scene/Objects 5.7 ms for 266 active objects (about 21 µs each). FirstScene is the built-in headless client scene that the screenshot tool uses. So about 8 ms of every server frame goes to rendering and updating a client nobody sees, and game update plus that render comes to about 17 ms: roughly 58 fps at idle.</dd>
@@ -987,7 +998,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b44">
-    <div class="rec-head"><span class="rec-id">B44</span><h3>The server restarts without warning or a reason</h3><span class="sev high">High</span><span class="conf">Why: unknown</span></div>
+    <div class="rec-head"><span class="rec-id">B44</span><h3>The server restarts without warning or a reason</h3><span class="sev high">High</span><span class="conf">Why: unknown</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Everyone connected, and any game state not yet written to disk.</dd>
       <dt>What</dt><dd>The live server restarted three times in one night with no warning and no reason given: at about 20:13, at about 22:24, and at about 01:10. Memory stood at 13.1 GB and 14 GB of 32 GB at the last two, so none of them looks like running out of memory. The 01:10 restart came during the first live forge measurement; repeating the same forge five minutes later ran to completion without one, so the trigger is unknown.<br><br><b>Update:</b> a fourth restart came at about 01:35 (uptime reset to 46 s), while a background job was stamping small voxel ops onto pooled Hollow rig parts (scale about 0.19) at one op every three frames. Just before it, that "idle" dressing measured 25.1 fps, an average update of 38.9 ms, 32 frames over 50 ms and a worst frame of 596 ms; an offline mock had predicted about 8 ms per op frame. Three of the four restarts happened during live voxel stamping on scaled rig parts or shells: at about 22:24 (the first armour stamping), 01:10 (a forge) and 01:35 (Hollow dressing).<br><br><b>Update:</b> two more restarts came the next morning, with no stamping running: at 07:22, while a playtester in a browser walked from the tutorial island to the hub (gameplay had been very choppy first, and no Lua errors preceded it), and at 07:58 with a test client connected. At that point three orphaned <code>sync</code> processes were running at once and pulling the 370 MB terrain in parallel on every terrain save (B48). That is a likely contributor, but it is unproven.<br><br><b>Update (#7):</b> the play server restarted while a playtester fought the Gate-Warden ("Disconnected for unknown reason"). Sync was off and no deploys were running, so orphaned syncs can't be the only cause; the server came back on the right terrain. The leading theory is runtime voxel ops on scaled rig parts with players connected. Every crusted hit had been painting a ~0.19-scale torso part (about 140 times the voxels of the same shape at scale 1), with no cap across players or Hollows. And the Gate-Warden's knight rebuild, which runs 68 stamping jobs after every Lua reload, stamped regardless of nearby players once the server had been up for 10 minutes.</dd>
@@ -999,11 +1010,12 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <div><h4>Impact</h4><p>Players are dropped, process-uptime clocks restart (B41), and everything since the last disk save is lost: the 22:24 restart reverted a world repair made minutes earlier. A game can't plan for restarts it can't see coming or explain.</p></div>
       <div><h4>Mitigation</h4><p>The game assumes a restart can happen at any moment: a persistent game clock, an immediate ledger save after one-shot repairs, and boot passes that repair homes and replay the terrain journal. Every remaining runtime op on a rig now goes through one global budget (at most 4 ops/s in total, one per 0.6 s per Hollow, and none on a live rig with a player within 80 m), crust chips cost no voxel ops at all, and the Warden's rebuild never stamps with anyone within 80 m of its gate. In the siege smoke test, rig ops fell from about 34 in 115 s (peak 7/s) to none. Continuous background stamping on scaled rig parts is shelved: the Hollow dressing was reverted (idle back to 59.7 fps, worst frame 17 ms). Player forging stays, because it is short, player-triggered and measured at a worst frame of about 50 ms. After the 01:10 restart the game clock (8,748 s against 204 s of uptime), the home re-seat, the dressed world, the Undercroft, lore and Omens all survived.</p></div>
       <div><h4>Suggested fix</h4><p>Record the reason for every restart (crash, host maintenance, watchdog, deploy) where makers can read it, warn connected players before planned restarts, and give scripts a shutdown hook to flush state.</p></div>
+      <div><h4>Status at the pause</h4><p>Open. Seven restarts between about 20:13 on 6 Oct and 10:35 on 7 Oct, with no cause reported by the platform. Mitigations reduced the leading suspects (stamping on scaled rig parts, orphaned syncs), but the server can still restart at any moment, and the game is built to survive it.</p></div>
     </div>
   </article>
 
   <article class="record high" id="b45">
-    <div class="rec-head"><span class="rec-id">B45</span><h3>After a server restart, sync silently fails every push</h3><span class="sev high">High</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B45</span><h3>After a server restart, sync silently fails every push</h3><span class="sev high">High</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers and agents who keep <code>virtualmatter sync</code> running while they edit, which is the documented workflow.</dd>
       <dt>What</dt><dd>After the 01:35 restart (B44), the long-running <code>sync</code> process started failing every push with HTTP 403 and kept running as if nothing had happened. Three deploys looked done locally (the files compared identical to the staged copies) but never reached the server. Restarting <code>sync</code> fixed it.</dd>
@@ -1019,7 +1031,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b46">
-    <div class="rec-head"><span class="rec-id">B46</span><h3>Server Lua has no stable per-user id</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B46</span><h3>Server Lua has no stable per-user id</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Any game that keeps per-player progress: characters, inventories, homes, unlocks.</dd>
       <dt>What</dt><dd>Server Lua gets no stable user id. The only identity is the client-supplied chat name, and it arrives by RPC <i>after</i> <code>clientConnected</code>. Ashlight keyed characters on the name it had at join time, which at that moment was a placeholder ("Wanderer &lt;connection id&gt;"). All 7 live character records turned out to be Wanderer-N, so no player's progress had ever survived a reconnect. In a browser, a signed-in maker's chat name is their platform handle; anonymous visitors get a random "Adjective Animal" name on each visit.</dd>
@@ -1035,7 +1047,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b47">
-    <div class="rec-head"><span class="rec-id">B47</span><h3><code>type()</code> of a Vec3 returns "Vec3", not "userdata"</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B47</span><h3><code>type()</code> of a Vec3 returns "Vec3", not "userdata"</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone who validates arguments with standard Lua type checks, and anyone who tests against mocks that use plain tables for vectors.</dd>
       <dt>What</dt><dd>In this engine, Lua's <code>type(v)</code> on a Vec3 returns "Vec3". Standard Lua would report a host object as "userdata", and this isn't documented. Two guards written as <code>type(pos) ~= "userdata" and type(pos) ~= "table"</code> and <code>type(v) == "userdata"</code> therefore rejected every real vector, silently.</dd>
@@ -1051,7 +1063,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b48">
-    <div class="rec-head"><span class="rec-id">B48</span><h3><code>virtualmatter sync</code> leaves orphans and pushes things it shouldn't</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B48</span><h3><code>virtualmatter sync</code> leaves orphans and pushes things it shouldn't</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers and agents running <code>sync</code> for a long session, which is the documented workflow, and everyone in the world they are editing.</dd>
       <dt>What</dt><dd>Stopping a backgrounded <code>npx virtualmatter sync</code> killed only the npx wrapper; the node child kept running. Three syncs were live at once (started at 01:51, 07:26 and 07:44). Between them they:
@@ -1073,7 +1085,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record med" id="b49">
-    <div class="rec-head"><span class="rec-id">B49</span><h3>A force-killed client stays connected for 1–2 minutes</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B49</span><h3>A force-killed client stays connected for 1–2 minutes</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Games whose world logic depends on who is online, and testers who close clients abruptly.</dd>
       <dt>What</dt><dd>A native client that is force-killed stays in <code>Server:GetClients()</code> for about 1–2 minutes. During that time the world counts as occupied: fuel burns and Dimmings run, and the Terrain Keeper's empty-server save is blocked. Test sessions this way drained the Emberheart to 197 fuel, and it had to be refuelled to 800.</dd>
@@ -1089,7 +1101,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b50">
-    <div class="rec-head"><span class="rec-id">B50</span><h3>Client transform race on NPCs</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B50</span><h3>Client transform race on NPCs</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Scripts that take over an object's transform on the client by turning off <code>receiveTransform</code>.</dd>
       <dt>What</dt><dd>Warden Aldric was drawn about five times too big at the hub on a slow client. The NPC's client animation captured the object's position and scale and set <code>receiveTransform = false</code> on its first frame. On a slow client that ran before the first streamed transform arrived, so the default scale of 1 was frozen in.</dd>
@@ -1105,7 +1117,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record high" id="b51">
-    <div class="rec-head"><span class="rec-id">B51</span><h3>Publishing to a play server can boot the wrong scene, then save over the published one</h3><span class="sev high">High</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B51</span><h3>Publishing to a play server can boot the wrong scene, then save over the published one</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers who publish a world with large voxel files to a play server, and the players who open the link.</dd>
       <dt>What</dt><dd>Each "Update play servers" restarted the play server before the 390 MB terrain upload had finished, so it booted the old starter scene ("Plane 52m Dark Tile4m"). With "Persisting scene changes" on, the running game's regular scene save then wrote that plane-linked scene back over the published scene on the play server, so every later update booted the broken scene again. The project page's per-server status also stayed "queued" for 15+ minutes after the sync had finished, including after a Restart.<br><br><b>Update:</b> on a later publish, the first "Update play servers" restarted the server and reported finished while delivering none of the changes; only then did the page say "Some of your editor's content never reached every play server". A second update delivered the scripts and music, restarted again, and the repainted 390 MB terrain landed two minutes after the boot, so it only takes effect on the next cold start (play servers sleep 15 minutes after the last player leaves).</dd>
@@ -1114,14 +1126,15 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
       <dt>Why</dt><dd>The update doesn't wait for large files to land before restarting, and nothing stops a running server from persisting a scene that booted on the wrong assets.</dd>
     </dl>
     <div class="extra">
-      <div><h4>Impact</h4><p>The published link showed an empty plane instead of the game, and the fault fed itself on every update. The stale "queued" status hides whether an update has landed.</p></div>
+      <div><h4>Impact</h4><p>The published link showed an empty plane instead of the game, and the fault fed itself on every update. The stale "queued" status hid whether an update had landed.</p></div>
       <div><h4>Mitigation shipped</h4><p>A boot-time repair (<code>Ashlight Game:repairTerrainLink()</code>): if the static terrain is the starter plane and an Ashlight terrain asset exists, it relinks the real terrain and saves the hierarchy. It does nothing in the editor. After a scripts-only update, the play server booted on the right terrain, with the pool, tutorial islands, Emberheart and NPCs in place.</p></div>
+      <div><h4>Status at the pause</h4><p>Resolved for Ashlight: with the boot-time relink in place, every later publish booted on the right terrain, and the play server was checked by direct probes instead of trusting the "queued" status. The platform-side race remains.</p></div>
       <div><h4>Suggested fix</h4><p>Restart a play server only after every file of the update has landed (or boot from a consistent snapshot), don't let a running server persist a scene over the published one, and keep the per-server status accurate.</p></div>
     </div>
   </article>
 
   <article class="record med" id="b52">
-    <div class="rec-head"><span class="rec-id">B52</span><h3>Play servers boot a different scene from the one the editor saves</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B52</span><h3>Play servers boot a different scene from the one the editor saves</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Makers publishing for the first time.</dd>
       <dt>What</dt><dd>A fresh play server boots <code>Scenes/InitScene.aeScene</code>, which was still the day-1 starter world, while every save the game made in the editor went to the editor's session file, <code>PlayScene.aeScene</code>. The editor's "current scene" reported InitScene with no unsaved changes even though InitScene on disk was the old starter. Nothing warns about the mismatch.</dd>
@@ -1137,7 +1150,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b53">
-    <div class="rec-head"><span class="rec-id">B53</span><h3>Generated asset names are normalised</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B53</span><h3>Generated asset names are normalised</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Code that generates assets (audio, images, models) and then looks them up by the name it asked for.</dd>
       <dt>What</dt><dd>The engine changes the requested name: "v2" becomes "V2", and "V2L" becomes "V2l". A lookup by the exact requested name finds nothing.</dd>
@@ -1153,7 +1166,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b54">
-    <div class="rec-head"><span class="rec-id">B54</span><h3>Text-to-music sometimes returns a 5–15 s clip for a requested loop</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B54</span><h3>Text-to-music sometimes returns a 5–15 s clip for a requested loop</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Games that generate music beds.</dd>
       <dt>What</dt><dd>Asked for longer looping beds, text-to-music returned some takes only 5–15 s long. The Boss and Dimming beds had to be regenerated (saved as "… V2l") because their first takes were that short.</dd>
@@ -1169,7 +1182,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b55">
-    <div class="rec-head"><span class="rec-id">B55</span><h3>Networked tables adopt the tables they're given</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B55</span><h3>Networked tables adopt the tables they're given</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Scripts that store the same Lua table in more than one networked table.</dd>
       <dt>What</dt><dd>Assigning a table into a networked table (<code>util:makeNetworkedTable</code>) adopts it and gives it a metatable. Assigning that same cached table to a second networked table then errors with "table can not have metatable". It surfaced when a cached back-profile table was shared between two characters.</dd>
@@ -1185,7 +1198,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b56">
-    <div class="rec-head"><span class="rec-id">B56</span><h3>MUI panels don't wrap by default, though the docs say they do</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B56</span><h3>MUI panels don't wrap by default, though the docs say they do</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone building screen UI with the MUI/NewUI widgets.</dd>
       <dt>What</dt><dd>A panel's <code>overflow</code> defaults to "Hidden": children stay on one line and anything past the edge is clipped. The only other value is "Wrap". Six 80-unit children in a 300-unit box gave one clipped line with "Hidden" and two lines of three with "Wrap". The agent guide's cheat sheet describes MUI as a "flexbox-like row-wrap layout".</dd>
@@ -1201,7 +1214,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b57">
-    <div class="rec-head"><span class="rec-id">B57</span><h3><code>Widget.sizing</code> is write-only</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B57</span><h3><code>Widget.sizing</code> is write-only</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone building screen UI with the MUI/NewUI widgets.</dd>
       <dt>What</dt><dd>Reading <code>Widget.sizing</code> raises an error; it can only be assigned. <code>sizingX</code> reads back as an enum integer. A layout probe that walked the widget tree reading <code>sizing</code> therefore never found the card it was looking for.</dd>
@@ -1217,7 +1230,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b58">
-    <div class="rec-head"><span class="rec-id">B58</span><h3>A disabled button is illegible</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B58</span><h3>A disabled button is illegible</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone building screen UI with the MUI/NewUI widgets.</dd>
       <dt>What</dt><dd>Setting the engine's <code>enabled = false</code> on a button tints it blue-grey and leaves its text nearly invisible.</dd>
@@ -1233,7 +1246,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b59">
-    <div class="rec-head"><span class="rec-id">B59</span><h3>A clear background with a frame renders as a grey fill</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B59</span><h3>A clear background with a frame renders as a grey fill</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Anyone building screen UI with the MUI/NewUI widgets.</dd>
       <dt>What</dt><dd>A panel with a transparent background and a border is drawn with a default blue-grey fill instead of staying clear.</dd>
@@ -1249,7 +1262,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b60">
-    <div class="rec-head"><span class="rec-id">B60</span><h3><code>string.upper</code> corrupted a multi-byte character</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span></div>
+    <div class="rec-head"><span class="rec-id">B60</span><h3><code>string.upper</code> corrupted a multi-byte character</h3><span class="sev low">Low</span><span class="conf">Why: inferred</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Scripts that uppercase text containing non-ASCII characters (titles, names).</dd>
       <dt>What</dt><dd>In testing, <code>string.upper</code> mangled a multi-byte em dash ("—") in a title.</dd>
@@ -1265,7 +1278,7 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </article>
 
   <article class="record" id="b61">
-    <div class="rec-head"><span class="rec-id">B61</span><h3>Generated icon art is unreadable below about 24 px</h3><span class="sev low">Low</span><span class="conf">Why: measured</span></div>
+    <div class="rec-head"><span class="rec-id">B61</span><h3>Generated icon art is unreadable below about 24 px</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index" aria-label="Back to the breakage index">↑ index</a></div>
     <dl class="w5">
       <dt>Who</dt><dd>Games that use generated images as UI icons.</dd>
       <dt>What</dt><dd>The 39 generated dark-fantasy icons turn into smudges when drawn smaller than about 24 px on a dark UI.</dd>
@@ -1296,83 +1309,93 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
 
 <section>
   <h2>Mitigation log</h2>
-  <p>What the game does today about each breakage, updated with every release.</p>
+  <p>What the game did about each breakage, as of this final edition (project paused 2026-10-08).</p>
   <div class="table-scroll">
     <table>
       <thead><tr><th>#</th><th>Mitigation in Ashlight</th><th>Status</th></tr></thead>
       <tbody>
-        <tr><td class="mono">B1/B16/B17</td><td>A ray-probed enemy mover with positions held in Lua, engine objects re-centred every 10 s, a 5-part enemy rig, hidden templates switched off, AI at 5 Hz near players and 2 Hz away, and a cap of 24 enemies</td><td>Shipped: 53–56 fps worst case</td></tr>
-        <tr><td class="mono">B2</td><td>Enemies spawned one per 0.3–0.4 s; boss bodies built across frames</td><td>Shipped</td></tr>
-        <tr><td class="mono">B3</td><td>Settle waits after terrain clears, and a fall-catch that teleports players back</td><td>Shipped (workaround)</td></tr>
-        <tr><td class="mono">B4/B21</td><td>Staging folders, single-write copies, compare-after-sync, one deployer</td><td>Process</td></tr>
-        <tr><td class="mono">B7</td><td>Generation jobs queued at most 4 at a time, with failure tracking. 11 of 11 sound effects generated fine</td><td>Shipped</td></tr>
-        <tr><td class="mono">B8</td><td>Builders that resume, idempotent rebuilds, and no Lua saves while generation callbacks are pending</td><td>Process</td></tr>
-        <tr><td class="mono">B12</td><td>Game state serialized as Lua-literal strings in a ledger; the terrain journal kept as its own string</td><td>Shipped</td></tr>
-        <tr><td class="mono">B19/B20</td><td>Terrain Keeper: full save only when the server is empty, plus a replayed edit journal</td><td>Shipped</td></tr>
-        <tr><td class="mono">B9</td><td>Particle budgets per effect; no particles in the server's headless client</td><td>Shipped</td></tr>
-        <tr><td class="mono">B23</td><td>Event-queued key input in the player script</td><td>Shipped, verified live</td></tr>
-        <tr><td class="mono">B24</td><td>Audio module re-indexes on asset sync and falls back to built-in sounds</td><td>Shipped</td></tr>
-        <tr><td class="mono">B26</td><td>Server rigs pose at 4 Hz in the headless client; visual checks done in a visible browser client, or with <code>screenshot --client &lt;id&gt;</code> through a real client with lighting on</td><td>Process</td></tr>
-        <tr><td class="mono">B27</td><td>Persisted timers moved off <code>Time.time</code>; now on the persistent game clock (B41)</td><td>Shipped</td></tr>
-        <tr><td class="mono">B28</td><td>Terrain reworks scheduled for an empty server; server-side ray audits; floating props found and grounded (a dead tree hung 35 m up, and an oil drum 1.3 m up after the Pit rim was reshaped)</td><td>Process + fixed</td></tr>
+        <tr><td class="mono"><a href="#b1">B1</a>/<a href="#b16">B16</a>/<a href="#b17">B17</a></td><td>A ray-probed enemy mover with positions held in Lua, engine objects re-centred every 10 s, a 5-part enemy rig, hidden templates switched off, AI at 5 Hz near players and 2 Hz away, and a cap of 24 enemies</td><td>Shipped: 53–56 fps worst case</td></tr>
+        <tr><td class="mono"><a href="#b2">B2</a></td><td>Enemies spawned one per 0.3–0.4 s; boss bodies built across frames</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b3">B3</a></td><td>Settle waits after terrain clears, and a fall-catch that teleports players back</td><td>Shipped (workaround)</td></tr>
+        <tr><td class="mono"><a href="#b4">B4</a>/<a href="#b21">B21</a></td><td>Staging folders, single-write copies, compare-after-sync, one deployer</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b7">B7</a></td><td>Generation jobs queued at most 4 at a time, with failure tracking. 11 of 11 sound effects generated fine</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b8">B8</a></td><td>Builders that resume, idempotent rebuilds, and no Lua saves while generation callbacks are pending</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b12">B12</a></td><td>Game state serialized as Lua-literal strings in a ledger; the terrain journal kept as its own string</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b19">B19</a>/<a href="#b20">B20</a></td><td>Terrain Keeper: full save only when the server is empty, plus a replayed edit journal</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b9">B9</a></td><td>Particle budgets per effect; no particles in the server's headless client</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b23">B23</a></td><td>Event-queued key input in the player script</td><td>Shipped, verified live</td></tr>
+        <tr><td class="mono"><a href="#b24">B24</a></td><td>Audio module re-indexes on asset sync and falls back to built-in sounds</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b26">B26</a></td><td>Server rigs pose at 4 Hz in the headless client; visual checks done in a visible browser client, or with <code>screenshot --client &lt;id&gt;</code> through a real client with lighting on</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b27">B27</a></td><td>Persisted timers moved off <code>Time.time</code>; now on the persistent game clock (B41)</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b28">B28</a></td><td>Terrain reworks scheduled for an empty server; server-side ray audits; floating props found and grounded (a dead tree hung 35 m up, and an oil drum 1.3 m up after the Pit rim was reshaped)</td><td>Process + fixed</td></tr>
         <tr><td class="mono">Arena</td><td>Pit rim reshaped into crags; stair access to all three high-ground shelves verified with a 0.5 m-step flood fill in both directions</td><td>Verified live</td></tr>
-        <tr><td class="mono">B29</td><td>Pre-built enemy rig pool; spawn 320 ms → 4–20 ms</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B29 (follow-up)</td><td>Bulwark rigs pooled the same way (previously about 300 ms per spawn); the Matron's 10 parts staged ahead of the fight, and her spawn measured at 10 ms live</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B28 (update)</td><td>Phantom geometry also seen 2–10 m from the camera after about 600 hub edits; server rays confirm the plaza is clear. Hub and plaza dressing now follows the empty-server rule too</td><td>Process</td></tr>
-        <tr><td class="mono">B23 (follow-up)</td><td>Mouse clicks and UI keys are now event-queued too (attacks, build placement, menus)</td><td>Shipped</td></tr>
-        <tr><td class="mono">B19 (follow-up)</td><td>The Keeper's automatic empty-server save fired twice on its own: the journal was cleared and the terrain marked saved</td><td>Verified live</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a></td><td>Pre-built enemy rig pool; spawn 320 ms → 4–20 ms</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a> (follow-up)</td><td>Bulwark rigs pooled the same way (previously about 300 ms per spawn); the Matron's 10 parts staged ahead of the fight, and her spawn measured at 10 ms live</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono"><a href="#b28">B28</a> (update)</td><td>Phantom geometry also seen 2–10 m from the camera after about 600 hub edits; server rays confirm the plaza is clear. Hub and plaza dressing now follows the empty-server rule too</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b23">B23</a> (follow-up)</td><td>Mouse clicks and UI keys are now event-queued too (attacks, build placement, menus)</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b19">B19</a> (follow-up)</td><td>The Keeper's automatic empty-server save fired twice on its own: the journal was cleared and the terrain marked saved</td><td>Verified live</td></tr>
         <tr><td class="mono">"Odd walls"</td><td>The 12 bare ruin shells were rebuilt as dressed ruined buildings (2 168 ops, 0 errors). The hub wall became a scavenged palisade, ash patches became flat paint, the sphere berm became a continuous boundary, and test structures were removed through the journal</td><td>Shipped; edge being made more natural</td></tr>
-        <tr><td class="mono">B30</td><td>Edge walls kept at least 2.9 m above the highest foothold; the Undercroft gated by a one-way door rather than a ledge</td><td>Shipped</td></tr>
-        <tr><td class="mono">B31</td><td>Stamped armour visuals reverted before players saw them; rebuilding from live part measurements; offline mocks must model scaled flat parts</td><td>Reverted, in progress</td></tr>
-        <tr><td class="mono">B32</td><td>Deploys batched and made with nobody online where possible; adopting the pool after reload tried and reverted</td><td>Process</td></tr>
-        <tr><td class="mono">B19 (update)</td><td>One automatic empty-server save measured at a 33.4 s main-thread stall; the Keeper saves non-journaled edits at most hourly</td><td>Measured</td></tr>
-        <tr><td class="mono">B33</td><td>Hit-stop by scaling each rig's update time; vignette from stepped translucent bands</td><td>Shipped</td></tr>
-        <tr><td class="mono">B20 (update)</td><td>Procedural props (oil drums) found empty after a restart; rebuild on boot when the VoxelData is empty, or save props as assets</td><td>Found; fix proposed</td></tr>
-        <tr><td class="mono">B33 (update)</td><td>Hit-stop and directional damage vignette deployed</td><td>Shipped, verified server-side</td></tr>
-        <tr><td class="mono">B34</td><td>Wait for the <code>.zma</code> or retry before attaching a new script</td><td>Process</td></tr>
-        <tr><td class="mono">B35</td><td>Retry with backoff for fetch failures (read back state before retrying world-changing Lua); boss logic checked in offline harnesses and server-side probes; human playtests for feel</td><td>Process</td></tr>
-        <tr><td class="mono">B36</td><td>Handedness normalised in the parallelepiped helper; north and east cliffs rebuilt (lowest crest N 0.5 → 6.7 m, E 0.0 → 5.7 m, 0 floating cells); plaza banners restored</td><td>Shipped, verified live</td></tr>
-        <tr><td class="mono">B37</td><td>Read-only ray audits (height maps, underside rays) after every procedural build</td><td>Process</td></tr>
-        <tr><td class="mono">B36 (update)</td><td>Guarded helper in every builder; homes 0/3 → 3/3 edge pieces with a boot-time rebuild; lair buttresses 0.7 → 5.8 m; Deep Arena crust cavities 0 → 1.9–2.4 m; armour confirmed unaffected</td><td>Shipped, verified live</td></tr>
-        <tr><td class="mono">B29 (siege)</td><td>Permanent Hollow pool of 14 for the siege: its warning phase holds 59 fps with a worst frame of 31 ms (was 48.5 fps, 140 ms)</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B38</td><td>None possible in game code</td><td>Reported</td></tr>
-        <tr><td class="mono">B39</td><td>Watching for a plateau</td><td>Monitoring</td></tr>
-        <tr><td class="mono">B29 (stress test)</td><td>No cold builds mid-fight, throttled pool rebuild, jittered AI think, lighter static jobs: steady 50–51 → 56.3 fps, worst frame 84–94 → 29 ms. Ramp-up spikes (p99 341 ms) still under investigation</td><td>Partly fixed, measured</td></tr>
-        <tr><td class="mono">B39 (update)</td><td>Atlas confirmed capped at 5,000 MB; residual growth of ~7 MB/min watched</td><td>Monitoring</td></tr>
-        <tr><td class="mono">B40</td><td>Parked rigs activated briefly, between fights, while being dressed</td><td>Shipped</td></tr>
-        <tr><td class="mono">B29 (resolved)</td><td>Spawn spikes traced to voxel adds on scaled parts; crust baked into 3 variant assets, chips painted, pools paced. Ramp p99 508 → 60.9 ms, worst 893 → 73 ms; steady worst 84–94 → 51 ms</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B29 (forging)</td><td>Forging armour on a player rig: 43.5 fps, worst 83 ms for ~6 s; baked tiers tried and reverted (B42). Now live 1-op/frame stamping onto shells: 47 fps, worst 48–52 ms over ~35–40 s</td><td>Acceptable</td></tr>
-        <tr><td class="mono">B29 (round 14)</td><td>Ramp p99 38.6 ms, worst 73 ms; steady 54.3 fps, p99 30.7 ms</td><td>Measured</td></tr>
-        <tr><td class="mono">B42</td><td>Baked-armour character patch reverted (58.2 fps, worst 28 ms after); assets kept for relinking</td><td>Reverted</td></tr>
-        <tr><td class="mono">B42 (update)</td><td>Freeze traced to the in-script bake code, now removed: 0 freezes in ~7,000 frames with and without templates. Baked binds still 100–500 ms, so armour shells are in progress</td><td>Superseded below</td></tr>
-        <tr><td class="mono">B42 (shells)</td><td>Armour shells measured at 40–360 ms per bind; shell code re-introduced the periodic freeze and was reverted; 111 obsolete variants (329 MB) deleted. Next: live 1-op/frame stamping onto shells</td><td>Reverted</td></tr>
-        <tr><td class="mono">B42 (round 5d)</td><td>No binds or <code>SaveAs</code> for armour; idle shows 0 freezes over 100 ms in 6,957 frames; 75 shell templates (60 MB) deleted. Freeze correlates with heavy <code>SaveAs</code> use (unproven)</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B44</td><td>Restart-proof state: persistent clock, immediate ledger saves, boot repair passes; all survived the 01:10 restart</td><td>Process</td></tr>
-        <tr><td class="mono">B29 (round 16)</td><td>Hollow, Body and Beacon components inactive, driven by one manager: steady 54.7 fps, worst 32 ms, no frames over 33 ms; script time 8.66 → 4.15 ms</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B43</td><td>None possible in game code; fewer active objects</td><td>Reported</td></tr>
-        <tr><td class="mono">B41</td><td>Persistent game clock in the ledger; immediate ledger save after one-shot repairs; boot-time home repair</td><td>Shipped</td></tr>
-        <tr><td class="mono">B44 (update)</td><td>Fourth restart during background Hollow dressing (25.1 fps, worst 596 ms beforehand); dressing reverted (59.7 fps, worst 17 ms); continuous stamping on scaled parts shelved</td><td>Shelved</td></tr>
-        <tr><td class="mono">B45</td><td>Restart <code>sync</code> after every server restart; confirm "pushed" lines per deploy</td><td>Process</td></tr>
-        <tr><td class="mono">B46</td><td>Joins held until the chat name arrives (up to 20 s); records refused for guest names; playtesters sign in</td><td>Shipped, verified</td></tr>
-        <tr><td class="mono">B47</td><td>Vectors duck-typed on .x/.y/.z; Reach smoke test 16/16 including the ping broadcast</td><td>Shipped, verified</td></tr>
-        <tr><td class="mono">B44 (#5, #6)</td><td>Restarts at 07:22 (playtester walking to the hub) and 07:58 (test client); orphaned syncs stopped</td><td>Watching</td></tr>
-        <tr><td class="mono">B29 (rounds 17–18)</td><td>No new rigs while 18+ Hollows are out: worst case 56 fps, worst frame 36–37 ms (was 64–102 ms)</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B48</td><td>Long-running sync stopped; push-only deploy script on the CLI's files client</td><td>Process</td></tr>
-        <tr><td class="mono">B49</td><td>Close clients gracefully</td><td>Process</td></tr>
-        <tr><td class="mono">B50</td><td>Rest transform published in a networked table; client waits for it</td><td>Shipped</td></tr>
-        <tr><td class="mono">B44 (#7)</td><td>Rig-op budget (4/s, none near players), zero-op crust chips, Warden rebuild never stamps within 80 m; siege smoke rig ops 34 → 0</td><td>Shipped, measured</td></tr>
-        <tr><td class="mono">B51</td><td>Boot-time terrain relink (<code>repairTerrainLink</code>); verified on the play server</td><td>Shipped, verified</td></tr>
-        <tr><td class="mono">B51 (update)</td><td>A publish reported finished while delivering nothing; retried, then verified the play server's code, terrain and music by probe</td><td>Process</td></tr>
-        <tr><td class="mono">B52</td><td>Scenes backed up; live world saved as InitScene with its own terrain copy</td><td>Fixed by hand</td></tr>
-        <tr><td class="mono">B53</td><td>Case-insensitive lookup with a v1 fallback</td><td>Shipped</td></tr>
-        <tr><td class="mono">B54</td><td>Check durations; regenerate short takes</td><td>Process</td></tr>
-        <tr><td class="mono">B55</td><td>Plain copies for each networked table</td><td>Shipped</td></tr>
-        <tr><td class="mono">B56</td><td>Frame helper defaults to <code>overflow = "Wrap"</code>; explicit <code>endLine</code> elsewhere</td><td>Shipped</td></tr>
-        <tr><td class="mono">B57</td><td>Sizes kept in game tables, never read back</td><td>Shipped</td></tr>
-        <tr><td class="mono">B58</td><td>Disabled buttons are a style, not the engine flag</td><td>Shipped</td></tr>
-        <tr><td class="mono">B59</td><td>No frame on clear elements; only the selected row is framed</td><td>Shipped</td></tr>
-        <tr><td class="mono">B60</td><td>ASCII-only uppercase helper for titles</td><td>Shipped</td></tr>
-        <tr><td class="mono">B61</td><td>Art at 24 px and up; coloured shape tokens below</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b30">B30</a></td><td>Edge walls kept at least 2.9 m above the highest foothold; the Undercroft gated by a one-way door rather than a ledge</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b31">B31</a></td><td>Stamped armour visuals reverted before players saw them, then rebuilt from live part measurements as shell stamping (B42); offline mocks must model scaled flat parts</td><td>Resolved</td></tr>
+        <tr><td class="mono"><a href="#b32">B32</a></td><td>Deploys batched and made with nobody online where possible; adopting the pool after reload tried and reverted</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b19">B19</a> (update)</td><td>One automatic empty-server save measured at a 33.4 s main-thread stall; the Keeper saves non-journaled edits at most hourly</td><td>Measured</td></tr>
+        <tr><td class="mono"><a href="#b33">B33</a></td><td>Hit-stop by scaling each rig's update time; vignette from stepped translucent bands</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b20">B20</a> (update)</td><td>Procedural props (oil drums) found empty after a restart; rebuild on boot when the VoxelData is empty, or save props as assets</td><td>Found; fix proposed</td></tr>
+        <tr><td class="mono"><a href="#b33">B33</a> (update)</td><td>Hit-stop and directional damage vignette deployed</td><td>Shipped, verified server-side</td></tr>
+        <tr><td class="mono"><a href="#b34">B34</a></td><td>Wait for the <code>.zma</code> or retry before attaching a new script</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b35">B35</a></td><td>Retry with backoff for fetch failures (read back state before retrying world-changing Lua); boss logic checked in offline harnesses and server-side probes; human playtests for feel</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b36">B36</a></td><td>Handedness normalised in the parallelepiped helper; north and east cliffs rebuilt (lowest crest N 0.5 → 6.7 m, E 0.0 → 5.7 m, 0 floating cells); plaza banners restored</td><td>Shipped, verified live</td></tr>
+        <tr><td class="mono"><a href="#b37">B37</a></td><td>Read-only ray audits (height maps, underside rays) after every procedural build</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b36">B36</a> (update)</td><td>Guarded helper in every builder; homes 0/3 → 3/3 edge pieces with a boot-time rebuild; lair buttresses 0.7 → 5.8 m; Deep Arena crust cavities 0 → 1.9–2.4 m; armour confirmed unaffected</td><td>Shipped, verified live</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a> (siege)</td><td>Permanent Hollow pool of 14 for the siege: its warning phase holds 59 fps with a worst frame of 31 ms (was 48.5 fps, 140 ms)</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono"><a href="#b38">B38</a></td><td>None possible in game code</td><td>Reported</td></tr>
+        <tr><td class="mono"><a href="#b39">B39</a></td><td>Watched for a plateau; the atlas capped (see update)</td><td>Superseded below</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a> (stress test)</td><td>No cold builds mid-fight, throttled pool rebuild, jittered AI think, lighter static jobs: steady 50–51 → 56.3 fps, worst frame 84–94 → 29 ms. Ramp-up spikes (p99 341 ms) traced and fixed in rounds 12–13 (see below)</td><td>Fixed later, measured</td></tr>
+        <tr><td class="mono"><a href="#b39">B39</a> (update)</td><td>Atlas confirmed capped at 5,000 MB; residual growth of ~7 MB/min unexplained at the pause</td><td>Open at the pause</td></tr>
+        <tr><td class="mono"><a href="#b40">B40</a></td><td>Parked rigs activated briefly, between fights, while being dressed</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a> (resolved)</td><td>Spawn spikes traced to voxel adds on scaled parts; crust baked into 3 variant assets, chips painted, pools paced. Ramp p99 508 → 60.9 ms, worst 893 → 73 ms; steady worst 84–94 → 51 ms</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a> (forging)</td><td>Forging armour on a player rig: 43.5 fps, worst 83 ms for ~6 s; baked tiers tried and reverted (B42). Now live 1-op/frame stamping onto shells: 47 fps, worst 48–52 ms over ~35–40 s</td><td>Acceptable</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a> (round 14)</td><td>Ramp p99 38.6 ms, worst 73 ms; steady 54.3 fps, p99 30.7 ms</td><td>Measured</td></tr>
+        <tr><td class="mono"><a href="#b42">B42</a></td><td>Baked-armour character patch reverted (58.2 fps, worst 28 ms after); assets kept for relinking</td><td>Reverted</td></tr>
+        <tr><td class="mono"><a href="#b42">B42</a> (update)</td><td>Freeze traced to the in-script bake code, now removed: 0 freezes in ~7,000 frames with and without templates. Baked binds still 100–500 ms, so armour shells were tried next</td><td>Superseded below</td></tr>
+        <tr><td class="mono"><a href="#b42">B42</a> (shells)</td><td>Armour shells measured at 40–360 ms per bind; shell code re-introduced the periodic freeze and was reverted; 111 obsolete variants (329 MB) deleted. Next: live 1-op/frame stamping onto shells</td><td>Reverted</td></tr>
+        <tr><td class="mono"><a href="#b42">B42</a> (round 5d)</td><td>No binds or <code>SaveAs</code> for armour; idle shows 0 freezes over 100 ms in 6,957 frames; 75 shell templates (60 MB) deleted. Freeze correlates with heavy <code>SaveAs</code> use (unproven)</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono"><a href="#b44">B44</a></td><td>Restart-proof state: persistent clock, immediate ledger saves, boot repair passes; all survived the 01:10 restart</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a> (round 16)</td><td>Hollow, Body and Beacon components inactive, driven by one manager: steady 54.7 fps, worst 32 ms, no frames over 33 ms; script time 8.66 → 4.15 ms</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono"><a href="#b43">B43</a></td><td>None possible in game code; fewer active objects</td><td>Reported</td></tr>
+        <tr><td class="mono"><a href="#b41">B41</a></td><td>Persistent game clock in the ledger; immediate ledger save after one-shot repairs; boot-time home repair</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b44">B44</a> (update)</td><td>Fourth restart during background Hollow dressing (25.1 fps, worst 596 ms beforehand); dressing reverted (59.7 fps, worst 17 ms); continuous stamping on scaled parts shelved</td><td>Shelved</td></tr>
+        <tr><td class="mono"><a href="#b45">B45</a></td><td>Restart <code>sync</code> after every server restart; confirm "pushed" lines per deploy</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b46">B46</a></td><td>Joins held until the chat name arrives (up to 20 s); records refused for guest names; playtesters sign in</td><td>Shipped, verified</td></tr>
+        <tr><td class="mono"><a href="#b47">B47</a></td><td>Vectors duck-typed on .x/.y/.z; Reach smoke test 16/16 including the ping broadcast</td><td>Shipped, verified</td></tr>
+        <tr><td class="mono"><a href="#b44">B44</a> (#5, #6)</td><td>Restarts at 07:22 (playtester walking to the hub) and 07:58 (test client); orphaned syncs stopped</td><td>Open (cause unknown)</td></tr>
+        <tr><td class="mono"><a href="#b29">B29</a> (rounds 17–18)</td><td>No new rigs while 18+ Hollows are out: worst case 56 fps, worst frame 36–37 ms (was 64–102 ms)</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono"><a href="#b48">B48</a></td><td>Long-running sync stopped; push-only deploy script on the CLI's files client</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b49">B49</a></td><td>Close clients gracefully</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b50">B50</a></td><td>Rest transform published in a networked table; client waits for it</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b44">B44</a> (#7)</td><td>Rig-op budget (4/s, none near players), zero-op crust chips, Warden rebuild never stamps within 80 m; siege smoke rig ops 34 → 0</td><td>Shipped, measured</td></tr>
+        <tr><td class="mono"><a href="#b51">B51</a></td><td>Boot-time terrain relink (<code>repairTerrainLink</code>); verified on the play server</td><td>Shipped, verified</td></tr>
+        <tr><td class="mono"><a href="#b51">B51</a> (update)</td><td>A publish reported finished while delivering nothing; retried, then verified the play server's code, terrain and music by probe</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b52">B52</a></td><td>Scenes backed up; live world saved as InitScene with its own terrain copy</td><td>Fixed by hand</td></tr>
+        <tr><td class="mono"><a href="#b53">B53</a></td><td>Case-insensitive lookup with a v1 fallback</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b54">B54</a></td><td>Check durations; regenerate short takes</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b55">B55</a></td><td>Plain copies for each networked table</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b56">B56</a></td><td>Frame helper defaults to <code>overflow = "Wrap"</code>; explicit <code>endLine</code> elsewhere</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b57">B57</a></td><td>Sizes kept in game tables, never read back</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b58">B58</a></td><td>Disabled buttons are a style, not the engine flag</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b59">B59</a></td><td>No frame on clear elements; only the selected row is framed</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b60">B60</a></td><td>ASCII-only uppercase helper for titles</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b61">B61</a></td><td>Art at 24 px and up; coloured shape tokens below</td><td>Shipped</td></tr>
+              <tr><td class="mono"><a href="#b5">B5</a></td><td>No game-side cap exists; networked state kept small and written only on change</td><td>Avoided</td></tr>
+        <tr><td class="mono"><a href="#b6">B6</a></td><td>None possible in game code; no unbounded tables, and long probes kept short</td><td>Avoided</td></tr>
+        <tr><td class="mono"><a href="#b10">B10</a></td><td>None in game code</td><td>Open (platform)</td></tr>
+        <tr><td class="mono"><a href="#b11">B11</a></td><td>The game replicates the transforms it needs itself, through networked tables and RPCs (see also B50)</td><td>Shipped</td></tr>
+        <tr><td class="mono"><a href="#b13">B13</a></td><td>Large builds split into many small ops</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b14">B14</a></td><td>Known Editor Tools boot errors ignored when checking engine errors</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b15">B15</a></td><td>Symbols checked against the running build before use</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b18">B18</a></td><td>Characters stay server-side rigs, pooled (B29)</td><td>Worked around</td></tr>
+        <tr><td class="mono"><a href="#b22">B22</a></td><td>Client tuning based on code-path costs, not a hidden tab's fps</td><td>Process</td></tr>
+        <tr><td class="mono"><a href="#b25">B25</a></td><td>A tunable lift for the vitals panel (<code>AshUI.VITALS_LIFT</code>); off by default</td><td>Shipped</td></tr>
       </tbody>
     </table>
   </div>
@@ -1434,6 +1457,86 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
   </div>
 </section>
 
+<section class="autopsy" id="autopsy">
+  <h2>Final autopsy: building through the CLI and MCP</h2>
+  <p class="note">Written by the coding agent (Claude) that built Ashlight, at the point the project was paused (2026-10-08). This is the builder's view of the tooling itself: the <code>virtualmatter</code> CLI, its MCP server, the in-world SDK surfaces those tools reach, and the publish path. Engine and runtime breakages stay in the index above. This section is about how quickly an agent can turn "the user wants X" into a verified, playable X.</p>
+
+  <h3>Scale of the work</h3>
+  <ul class="plain">
+    <li><b>21 build rounds over about two days.</b> That covered a 160 m world; 5 bosses, a siege, Omens and a tutorial; 4 callings, homes, an economy, music and SFX; and a full UI overhaul.</li>
+    <li><b>Up to 9 parallel builder agents.</b> One lead deployed everything to the live world.</li>
+    <li><b>Hundreds of deploys, all hot-reloaded into a running world.</b> Most were checked with live smoke tests, engine-error checks, and screenshots or probes from a real client.</li>
+    <li><b>Three playtests by the maker</b>, in the editor and on a published play server.</li>
+  </ul>
+
+  <h3>What was genuinely helpful</h3>
+  <ol class="plain">
+    <li><b><code>run-lua</code> was the backbone of everything, on the server and on a client</b> (<code>--target client</code>). Most verification, profiling and test automation ran through it: read-only probes of live state; scripted smoke tests that drive a fake player through the tutorial, combat and a full siege using the game's real server functions; client-side UI probes; and reading engine profiler timers on a real client. Its clear "504 may still be running, do not resend" contract prevented double-applied world changes.</li>
+    <li><b><code>screenshot --client &lt;id&gt;</code></b> captured exactly what a real, lit client sees, UI included. This was the only reliable way to judge lighting, UI layout and theme. It caught clipped labels, a stray HUD plate and illegible icons that the mock tests passed.</li>
+    <li><b><code>errors</code>.</b> A cheap health check after every deploy.</li>
+    <li><b><code>open</code>, the native client.</b> A real client the agent could launch, sign in and probe. Engine timers read through it (<code>AE:GetLogTimers</code>/<code>GetLogTime</code>) found the true frame costs: shadows were 12 of 42 ms, and the SDK particle updater about 50 µs per particle. That was a 2× fps gain the playtester felt.</li>
+    <li><b>Hot reload on save.</b> Iteration measured in seconds, with no build step.</li>
+    <li><b>In-engine generation through Fal.</b> About 90 sound effects and music tracks and 39 UI icons, made without leaving the world.</li>
+    <li><b><code>apiEmmyAtomontage.lua</code> plus the skill packs.</b> One greppable file of real signatures (for example <code>Server:DisconnectClient</code>, <code>GetLogTimers</code>, <code>SaveSceneAs</code>) answered most "does this exist?" questions instantly.</li>
+    <li><b>The files API underneath the CLI</b> (FilesClient: list with etags, put, get, delete). Once wrapped into a push-only deploy, it was fast and safe.</li>
+  </ol>
+
+  <h3>What was excess or got in the way</h3>
+  <ol class="plain">
+    <li><b><code>sync</code> is the wrong default for an agent on a real world (<a href="#b4">B4</a>, <a href="#b21">B21</a>, <a href="#b45">B45</a>, <a href="#b48">B48</a>).</b> It is a two-way watcher with no ignore list.
+      <ul>
+        <li>It pulled the 370 MB terrain on every server save, including the engine's half-written <code>.am~</code> temp file.</li>
+        <li>It reported false conflicts on every push.</li>
+        <li>It pushed partial <code>.vmdownload</code> fragments into the world.</li>
+        <li>It re-pushed unchanged scripts, each of which Lua-resets the world.</li>
+        <li>Stopping it left the node child running, so three syncs once ran at once.</li>
+      </ul>
+      Push-only plus explicit pulls is all an agent needs.</li>
+    <li><b>Every <code>.lua</code> save resets every script (<a href="#b8">B8</a>, <a href="#b27">B27</a>, <a href="#b32">B32</a>).</b> A one-line deploy rebuilds the whole world state: players re-join, native clients get new random names, rigs rebuild, in-flight async work is lost. It also forced "freeze deploys while generation runs" choreography.</li>
+    <li><b>The default screenshot client misleads (<a href="#b26">B26</a>).</b> SSAO off, no game lighting, low LOD. Every lighting judgement made from it was wrong until <code>--client</code> was used.</li>
+    <li><b>The MCP <code>write_file</code> needs the whole file in the request.</b> The game's scripts are 50–460 KB, so every MCP deploy would cost context, and there is no patch, diff or "push this local file" tool. The CLI files API had to be wrapped instead.</li>
+    <li><b>AGENTS.md is very long.</b> It repeats the same rules many times, such as "don't use the website agent". It costs context every session, while the facts that actually bit (the B-entries here) were missing from it.</li>
+    <li><b>Ambiguous long calls.</b> A large save makes <code>run-lua</code> time out (504) with no job handle to collect the result later, so every heavy operation needed hand-made polling.</li>
+  </ol>
+
+  <h3>What's missing, ranked by how much time it would have saved</h3>
+  <ol class="plain">
+    <li><b>A truthful publish command, <code>virtualmatter publish</code>, with real status (<a href="#b51">B51</a>, <a href="#b52">B52</a>).</b> "Update play servers" restarted the play server before the 390 MB terrain arrived. The server then booted the old starter scene and saved over the published one. It also once reported "finished" while delivering nothing, the per-server status sat at "queued" long after sync, and the Restart button did nothing. Needed: restart only after every file lands; name the scene the play server will boot; expose an API the agent can call. Publishing was only possible by driving the website in the maker's signed-in browser.</li>
+    <li><b>Crash reasons and server logs.</b> There were 7 unexplained server restarts (<a href="#b44">B44</a>), one mid-boss-fight in front of the maker. Needed: <code>virtualmatter logs</code>; the last N stderr lines; restart reason, exit code, OOM or watchdog; memory over time.</li>
+    <li><b>Push-only deploy and an ignore list.</b> <code>virtualmatter push &lt;files&gt;</code> / <code>pull &lt;files&gt;</code>, a <code>.vmignore</code> that excludes <code>*.am</code> and temp files by default, and sync that kills its child on exit.</li>
+    <li><b>Deploy without a full Lua reset.</b> Module-level hot reload, or a "reload only this script" option. Plus a guard that defers a reload while engine-side async jobs (Fal, voxel jobs) are pending.</li>
+    <li><b>Client automation for playtests (<a href="#b35">B35</a>).</b> Spawn a headless or managed test client, inject input (keys, mouse, movement) and read its HUD. That would turn "ask the maker to playtest" into "the agent playtests first". Test clients should not count as real players (ghosts: <a href="#b49">B49</a>) or create saved characters.</li>
+    <li><b>MCP tools sized for code.</b> <code>patch_file</code> (anchored replace or unified diff), <code>push_local_file(path)</code>, <code>run_lua</code> against a play framing (read-only), and <code>screenshot</code> with <code>client_id</code>. All of these existed only as hand-written CLI wrappers.</li>
+    <li><b>A profiler endpoint.</b> One call that returns per-script and engine timers averaged over N seconds, on the server or a client. The agent rebuilt this from <code>GetLogTimers</code> and <code>SetProfileScriptsUpdate</code>.</li>
+    <li><b>Identity and world state in <code>world_info</code>:</b> a stable per-user id at <code>clientConnected</code> (<a href="#b46">B46</a>); the current scene file, its terrain asset, the dirty flag and last save times; and which scene play servers boot.</li>
+    <li><b>Generation results that report what was made.</b> The final asset name after normalisation (<a href="#b53">B53</a>), the real duration of generated audio (<a href="#b54">B54</a>), and a job-status API.</li>
+    <li><b>A branch or sandbox world for smoke tests.</b> Every smoke test ran on the live world and needed careful teardown of fake players, records, Omens and fuel. A cheap clone would make destructive tests safe.</li>
+    <li><b>Structured errors with a cursor.</b> <code>errors --since &lt;cursor&gt;</code> as plain JSON. Today it is double-encoded JSON that repeats old errors.</li>
+  </ol>
+
+  <h3>Tools the agent had to build to fill the gaps</h3>
+  <p>These all live in the session scratchpad and are reusable by the platform team:</p>
+  <ul class="plain">
+    <li><b><code>vmpush</code></b>: a push-only deploy through FilesClient with etags.</li>
+    <li><b><code>vmdel</code> / <code>vmrecent</code></b>: list or delete stray world files, and show what changed recently and when.</li>
+    <li><b><code>vmplaylua</code> / <code>vmplaychk</code> / <code>vmplayget</code> / <code>vmplayfiles</code></b>: read-only probes of the published play framing.</li>
+    <li><b><code>cl_timers</code> / <code>cl_frames</code> / <code>st_*</code></b>: client and server profiling and worst-case stress tests.</li>
+    <li><b>Smoke suites:</b> tutorial (19 checks), Reach (16) and siege (53), each with teardown and verification.</li>
+    <li><b><code>pf</code> preflight:</b> about 20 world-health checks, with safe auto-fixes.</li>
+    <li><b><code>luachk</code></b>: a real-Lua syntax gate run before every deploy.</li>
+  </ul>
+
+  <h3>Bottom line</h3>
+  <p>The engine connection (<code>run-lua</code>, <code>errors</code>, <code>screenshot --client</code>, <code>open</code>) is excellent: an agent can see, measure and test almost anything in a running world. What slowed this project down was the plumbing around it:</p>
+  <ul class="plain">
+    <li><b>deploy:</b> sync;</li>
+    <li><b>publish:</b> website only, untruthful status;</li>
+    <li><b>diagnosis:</b> no crash logs;</li>
+    <li><b>iteration:</b> a full reset on every save.</li>
+  </ul>
+  <p>Fix those four and an agent could go from feedback to a verified, published fix in minutes instead of hours.</p>
+</section>
+
 <section>
   <h2>Method</h2>
   <ul class="plain">
@@ -1441,13 +1544,13 @@ return t:GetComponentByType("VoxelData").asset -- nil</code></pre></div>
     <li>To separate a creation spike from ongoing cost, I created loads gradually and then measured again at steady state.</li>
     <li>Causes were isolated with <code>Scene:SetProfileScriptsUpdate</code> plus microbenchmarks timed with <code>AE:GetDebugTime</code>.</li>
     <li>All test objects were created at least 200 m from play areas and removed afterwards.</li>
-    <li>Organic findings (B3, B7, B8, B10–B15) came up while building the game. Controlled findings (B1, B2, B5, B6, B9) came from the stress harness.</li>
-    <li>Limits: one host, one native client, one session. Client-side numbers depend on the hardware. I did not test multiple concurrent human players.</li>
+    <li>Organic findings (B3, B7, B8, B10–B15, and most from B16 on) came up while building and playtesting the game. Controlled findings (B1, B2, B5, B6, B9, and the worst-case runs under B29) came from stress harnesses.</li>
+    <li>Limits: one world (the editor plus one published play server), one native client and a few browser sessions. Client-side numbers depend on the hardware. I did not test many concurrent human players.</li>
   </ul>
 </section>
 
 <footer>
-  <span>Compiled by Claude (Opus 5.5) working through the virtualmatter CLI and MCP, 6 Oct 2026.</span>
+  <span>Compiled by Claude (Opus 5.5) working through the virtualmatter CLI and MCP, 6–8 Oct 2026. Final edition (v33): project paused 2026-10-08.</span>
   <span>Workarounds for B1, B3, B8 and B12 are in the Ashlight scripts: Hollow movement LOD, NPC cap of 24, fall-catch, resumable builders, and a string-serialized ledger.</span>
 </footer>
 
