@@ -131,7 +131,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
 </head><body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 08 Oct 2026 20:48 · 20 breakages (5 critical · 7 high · 5 medium · 3 low)</div>
+  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 08 Oct 2026 21:24 · 22 breakages (5 critical · 8 high · 6 medium · 3 low)</div>
   <h1>Where Virtual Matter Breaks: destruction FPS</h1>
   <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given.</p>
   <div class="facts">
@@ -168,12 +168,15 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
         <tr><td class="mono">F18</td><td><span class="sev high">High</span></td><td><a href="#f18"><code>imagine()</code> jobs are silently orphaned by any Lua reset (a <code>.lua</code> push): the progress script stays forever, no error, no asset</a></td><td>Observed 6 times</td></tr>
         <tr><td class="mono">F19</td><td><span class="sev med">Medium</span></td><td><a href="#f19">Small per-frame Lua garbage (~7k tables/s) produced 10-14 ms client GC spikes, charged to whichever script allocates</a></td><td>Measured; fixed in SCAR</td></tr>
         <tr><td class="mono">F20</td><td><span class="sev low">Low</span></td><td><a href="#f20">Scoped zoom (FOV 14) still renders distance-based LOD, so a 4.6x scope magnifies coarse voxels</a></td><td>Observed</td></tr>
+        <tr><td class="mono">F21</td><td><span class="sev med">Medium</span></td><td><a href="#f21">On a client, <code>VoxelData.data</code>, <code>.asset</code> and <code>.isLoaded</code> read nil/false even for objects it renders</a></td><td>Measured; worked around</td></tr>
+        <tr><td class="mono">F22</td><td><span class="sev high">High</span></td><td><a href="#f22">A dynamic voxel object streams to a client only near its SERVER position; objects a client poses elsewhere stay empty or coarse</a></td><td>Measured; worked around</td></tr>
     </tbody></table></div>
 </section>
 <section id="changelog">
   <h2>Changelog</h2>
   <ul class="changelog">
-    <li><b>8 Oct 2026 (latest):</b> F15-F20 and N1 from the character and animation work (generated soldier cut into a 12-part rig, procedural animation, scale bench) and the first live playtest (render holes, orphaned generations).</li>
+    <li><b>8 Oct 2026 (latest):</b> F21-F22 from the first-person viewmodel work.</li>
+    <li><b>8 Oct 2026:</b> F15-F20 and N1 from the character and animation work (generated soldier cut into a 12-part rig, procedural animation, scale bench) and the first live playtest (render holes, orphaned generations).</li>
     <li><b>8 Oct 2026:</b> F4 count 8 (the 8th disconnect followed a 51.8 s upstream stall with no screenshot involved, so screenshots are not the only trigger). Report is now a living document under the Ashlight edition's site.</li>
     <li><b>8 Oct 2026:</b> F12 (per-op static edit cost), F13 (stale screenshot client after a map-scale rebuild) and F14 (late edits for freshly joined clients) added from the gameplay delivery bench; F4 updated with the client-log stall evidence (7 occurrences).</li>
     <li><b>8 Oct 2026 (first edition):</b> F1-F11, from the terrain edit bench (B3/B28/B16) and the first SCAR build.</li>
@@ -367,6 +370,18 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
       <div><h4>Rays on scaled objects</h4><p>plain (non-forced) rays hit scaled dynamic objects, unlike B31's forced rays.</p></div>
       <div><h4>Tint</h4><p><code>VoxelData.tintColor</code> team tint and a damage flash replicate and cost nothing measurable.</p></div>
       <div><h4>Procedural animation</h4><p>client-side animation of 10 flat 12-part rigs (two-bone IK, world-planted feet, verlet ragdolls) costs 0.28 ms/frame. Server cost is unchanged (p99 16.9 ms).</p></div>
+    </div>
+  </article>
+  <article class="record med" id="f21">
+    <div class="rec-head"><span class="rec-id">F21</span><h3>Clients cannot see a streamed object's voxel data</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <p>On the native client, every rig part (rendered and visible) and every viewmodel part reported <code>VoxelData.data == nil</code>, <code>VoxelData.asset == nil</code> and <code>isLoaded == false</code>, while the server reported the bound asset and the volume. A client therefore cannot tell whether an object's voxels have arrived. SCAR's viewmodel waited for <code>data.volume &gt; 0</code> and never switched on. Workaround: trust the server's binding. Suggested fix: expose a client-side "streamed / LOD level" flag on VoxelData.</p>
+  </article>
+  <article class="record high" id="f22">
+    <div class="rec-head"><span class="rec-id">F22</span><h3>Dynamic objects stream only near their server position</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <p>SCAR poses rigs and viewmodels on the client (<code>receiveTransform = false</code>).</p>
+    <div class="extra">
+      <div><h4>Viewmodel</h4><p>the server pool parked the viewmodel set 40 m under the map. The owning client never received its voxels, so the guns stayed invisible in front of the camera. Moving the set's server position to 6 m under the owner's feet made it appear within seconds.</p></div>
+      <div><h4>Rigs</h4><p>remote rigs whose server root lagged the player (re-centred every 3 s) were reported as "enemy models sometimes not showing". Re-centring at 4 Hz addressed it. The engine decides streaming and LOD from the server-side transform, not from where the client draws the object. Any client-predicted or client-posed object therefore needs its server position kept near where it is drawn (inside the ground if it must stay hidden). Suggested fix: let a client report where it renders an object it owns, or add a per-object "always stream to its owner" flag.</p></div>
     </div>
   </article>
 </section>
