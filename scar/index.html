@@ -131,7 +131,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
 </head><body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 08 Oct 2026 22:01 · 23 breakages (6 critical · 8 high · 6 medium · 3 low)</div>
+  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 09 Oct 2026 08:05 · 25 breakages (6 critical · 8 high · 7 medium · 4 low)</div>
   <h1>Where Virtual Matter Breaks: destruction FPS</h1>
   <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given.</p>
   <div class="facts">
@@ -171,12 +171,15 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
         <tr><td class="mono">F21</td><td><span class="sev med">Medium</span></td><td><a href="#f21">On a client, <code>VoxelData.data</code>, <code>.asset</code> and <code>.isLoaded</code> read nil/false even for objects it renders</a></td><td>Measured; worked around</td></tr>
         <tr><td class="mono">F22</td><td><span class="sev high">High</span></td><td><a href="#f22">A dynamic voxel object streams to a client only near its SERVER position; objects a client poses elsewhere stay empty or coarse</a></td><td>Measured; worked around</td></tr>
         <tr><td class="mono">F23</td><td><span class="sev crit">Critical</span></td><td><a href="#f23">Server frame spikes (75-100 ms, 1-2.5 per second) come from streaming to connected clients; zero with no client, and a 4-hour client causes about twice the spikes of a fresh one</a></td><td>Measured; partial workaround (client restart)</td></tr>
+        <tr><td class="mono">F24</td><td><span class="sev med">Medium</span></td><td><a href="#f24">Script-created NewUI root windows read <code>visible = false</code> on a fresh native client without any script hiding them; panels that are never re-set stay gone</a></td><td>Observed; worked around (re-assert 5 Hz)</td></tr>
+        <tr><td class="mono">F25</td><td><span class="sev low">Low</span></td><td><a href="#f25">An object posed on the client in LateUpdate against the camera appears one frame behind it: a held viewmodel trails the view while strafing</a></td><td>Observed; worked around (one-frame lead)</td></tr>
     </tbody></table></div>
 </section>
 <section id="changelog">
   <h2>Changelog</h2>
   <ul class="changelog">
-    <li><b>8 Oct 2026 (latest):</b> F23 from a per-frame engine-timer capture and a client-restart A/B.</li>
+    <li><b>9 Oct 2026 (latest):</b> F24 (HUD windows hidden on a fresh client) and F25 (client-posed objects one frame behind the camera) from the morning playtest.</li>
+    <li><b>8 Oct 2026:</b> F23 from a per-frame engine-timer capture and a client-restart A/B.</li>
     <li><b>8 Oct 2026:</b> F21-F22 from the first-person viewmodel work.</li>
     <li><b>8 Oct 2026:</b> F15-F20 and N1 from the character and animation work (generated soldier cut into a 12-part rig, procedural animation, scale bench) and the first live playtest (render holes, orphaned generations).</li>
     <li><b>8 Oct 2026:</b> F4 count 8 (the 8th disconnect followed a 51.8 s upstream stall with no screenshot involved, so screenshots are not the only trigger). Report is now a living document under the Ashlight edition's site.</li>
@@ -401,6 +404,32 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
       <div><h4>Impact</h4><p>the server's p99 reaches 100-200 ms during play, though the game's own Lua is about 0.5 ms (bots) to 2 ms. Every client's snapshots and hit registration stall with it.</p></div>
       <div><h4>Workaround</h4><p>restarting a long-running client halves the spikes. SCAR also keeps moving voxel objects to a minimum (debris capped and short-lived) and never streams HD viewmodel sets to non-owners where avoidable.</p></div>
       <div><h4>Suggested fix</h4><p>budget per-frame streaming work across frames, and look into why a client's streaming cost grows with session length (requests piling up, or cache churn).</p></div>
+    </div>
+  </article>
+  <article class="record med" id="f24">
+    <div class="rec-head"><span class="rec-id">F24</span><h3>HUD root windows turn invisible on a fresh client with no script involved</h3><span class="sev med">Medium</span><span class="conf">Why: observed </span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any player whose HUD is built from script-created NewUI root windows (<code>ED.RootPanel</code>).</dd>
+      <dt>What</dt><dd>after a fresh native client joined (9 Oct, ~05:30), the player reported "my UI is missing". On that client <code>UI:GetWindows()</code> listed all of SCAR's HUD windows, but six (Top, Vitals, Weapon, Feed, Tags, Toasts) read <code>visible = false</code>. Nothing in SCAR's scripts sets those six invisible: they are created visible and never toggled. The windows the HUD re-sets every frame (crosshair, markers) were visible. Setting <code>visible = true</code> from a client <code>run-lua</code> brought the panels back at once (confirmed by a client screenshot).</dd>
+      <dt>When</dt><dd>on a freshly started native client, after the game had pushed several script updates (each push resets Lua and rebuilds the HUD). The exact trigger is not known.</dd>
+      <dt>Where</dt><dd>NewUI root window visibility on the client.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>a HUD that relies on "created visible, never touched" silently loses its panels.</p></div>
+      <div><h4>Workaround</h4><p>SCAR re-reads the six always-on panels 5 times a second and re-shows any that read invisible (<code>ScarHUD.coreRestores</code> counts restores).</p></div>
+      <div><h4>Suggested fix</h4><p>find what clears <code>visible</code> on root windows (window-state restore from a previous instance after a rebuild?), and document which engine events hide script windows.</p></div>
+    </div>
+  </article>
+  <article class="record low" id="f25">
+    <div class="rec-head"><span class="rec-id">F25</span><h3>Client-posed objects render one frame behind the camera</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>first-person viewmodels and anything else posed on the client against the camera.</dd>
+      <dt>What</dt><dd>SCAR poses its first-person gun and arms (voxel objects, <code>receiveTransform = false</code>) in LateUpdate from the camera object's world transform, after movement and the camera update. When strafing at 30-40 fps the gun visibly trailed the view, by about a frame of movement (10-17 cm, which is large at 0.4 m from the eye), and "hiccuped" with frame-time variation. Turning showed the same lag, hidden by the deliberate sway.</dd>
+      <dt>Where</dt><dd>transform propagation from Lua to the renderer for dynamic voxel objects, compared with the camera's own transform.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Workaround</h4><p>lead the posed position by the camera's last-frame horizontal motion (<code>ScarVM.LEAD</code>).</p></div>
+      <div><h4>Suggested fix</h4><p>apply LateUpdate transforms in the same frame as the camera, or offer a "render relative to camera" flag for viewmodels.</p></div>
     </div>
   </article>
 </section>
