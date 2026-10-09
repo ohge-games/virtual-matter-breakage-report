@@ -131,7 +131,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
 </head><body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 09 Oct 2026 08:05 · 25 breakages (6 critical · 8 high · 7 medium · 4 low)</div>
+  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 09 Oct 2026 20:39 · 30 breakages (7 critical · 10 high · 8 medium · 5 low)</div>
   <h1>Where Virtual Matter Breaks: destruction FPS</h1>
   <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given.</p>
   <div class="facts">
@@ -173,12 +173,18 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
         <tr><td class="mono">F23</td><td><span class="sev crit">Critical</span></td><td><a href="#f23">Server frame spikes (75-100 ms, 1-2.5 per second) come from streaming to connected clients; zero with no client, and a 4-hour client causes about twice the spikes of a fresh one</a></td><td>Measured; partial workaround (client restart)</td></tr>
         <tr><td class="mono">F24</td><td><span class="sev med">Medium</span></td><td><a href="#f24">Script-created NewUI root windows read <code>visible = false</code> on a fresh native client without any script hiding them; panels that are never re-set stay gone</a></td><td>Observed; worked around (re-assert 5 Hz)</td></tr>
         <tr><td class="mono">F25</td><td><span class="sev low">Low</span></td><td><a href="#f25">An object posed on the client in LateUpdate against the camera appears one frame behind it: a held viewmodel trails the view while strafing</a></td><td>Observed; worked around (one-frame lead)</td></tr>
+        <tr><td class="mono">F26</td><td><span class="sev crit">Critical</span></td><td><a href="#f26">Editor vs play: a PLAY client gets pooled child objects unparented and never gets their empty parent objects; the editor client gets the whole hierarchy, so it all works in the editor and breaks after publish</a></td><td>Measured (client diagnostics); worked around (part ids)</td></tr>
+        <tr><td class="mono">F27</td><td><span class="sev high">High</span></td><td><a href="#f27">Editor vs play: the published scene does not carry script attachments made in the editor's live scene, so new scripts silently don't run on play servers</a></td><td>Measured; worked around (self-repair at boot)</td></tr>
+        <tr><td class="mono">F28</td><td><span class="sev high">High</span></td><td><a href="#f28">Editor vs play: no tool reaches a play client (no client Lua, no screenshot, no errors), and the CLI cannot publish; play-only bugs are invisible to the agent</a></td><td>Tooling gap; worked around (client diagnostics RPC)</td></tr>
+        <tr><td class="mono">F29</td><td><span class="sev low">Low</span></td><td><a href="#f29"><code>virtualmatter open</code> client self-update fails from Git Bash on Windows (<code>tar: Cannot connect to C: resolve failed</code>)</a></td><td>Worked around (run from PowerShell)</td></tr>
+        <tr><td class="mono">F30</td><td><span class="sev med">Medium</span></td><td><a href="#f30"><code>screenshot --client --at</code> moves only the camera; streaming stays with the player, so shots away from the player show holes and placeholder terrain, and the server-side screenshot client can be stale (F13)</a></td><td>Observed; no visual A/B possible away from the player</td></tr>
     </tbody></table></div>
 </section>
 <section id="changelog">
   <h2>Changelog</h2>
   <ul class="changelog">
-    <li><b>9 Oct 2026 (latest):</b> F24 (HUD windows hidden on a fresh client) and F25 (client-posed objects one frame behind the camera) from the morning playtest.</li>
+    <li><b>9 Oct 2026 (latest):</b> F26-F30, the editor-vs-play gap found after the first friends' playtest of a published build (unparented pooled parts, missing script attachments, no play-client tooling), plus two tooling issues.</li>
+    <li><b>9 Oct 2026:</b> F24 (HUD windows hidden on a fresh client) and F25 (client-posed objects one frame behind the camera) from the morning playtest.</li>
     <li><b>8 Oct 2026:</b> F23 from a per-frame engine-timer capture and a client-restart A/B.</li>
     <li><b>8 Oct 2026:</b> F21-F22 from the first-person viewmodel work.</li>
     <li><b>8 Oct 2026:</b> F15-F20 and N1 from the character and animation work (generated soldier cut into a 12-part rig, procedural animation, scale bench) and the first live playtest (render holes, orphaned generations).</li>
@@ -431,6 +437,49 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
       <div><h4>Workaround</h4><p>lead the posed position by the camera's last-frame horizontal motion (<code>ScarVM.LEAD</code>).</p></div>
       <div><h4>Suggested fix</h4><p>apply LateUpdate transforms in the same frame as the camera, or offer a "render relative to camera" flag for viewmodels.</p></div>
     </div>
+  </article>
+  <article class="record crit" id="f26">
+    <div class="rec-head"><span class="rec-id">F26</span><h3>Play clients get pooled parts unparented, and never get empty parent objects</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every player of a published world that builds object pools (rigs, held items, prop groups) under empty parent objects.</dd>
+      <dt>What</dt><dd>after publishing, players saw invisible bots, guns floating around the map and the placeholder first-person gun. A one-line diagnostic each client reports to the server showed, on the play client, <code>Avatars rigs=0</code> and <code>VM set=nil</code> (the editor client: 10 rigs, set 1). The server had all 10 "Scar Rig i" roots with their 14 parts, assets bound, and identical object counts to the editor. The play client never received the empty roots ("Scar Rig i", "Scar VM i", "Scar Lobby Props": no component, nothing synced), so <code>Scene:GetObjectByName</code> found nothing, and the parts arrived unparented, drawn at their raw local offsets near the world origin (the "floating guns").</dd>
+      <dt>When</dt><dd>on play servers only. In the editor, the client receives the full hierarchy, so the same code works.</dd>
+      <dt>Where</dt><dd>object replication to non-editor clients.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Workaround</h4><p>the server publishes each pool's part ids in a networked field (<code>Object.id</code> is the same on server and clients); clients resolve parts with <code>Scene:GetObjectById</code>, parent them under a client-only stand-in root and pose them. Prop groups became top-level objects with world transforms. Verified by forcing the id path on an editor client: 10 rigs resolved by id, torsos on their bots, first-person set active.</p></div>
+      <div><h4>Suggested fix</h4><p>replicate the hierarchy (including empty parents) to play clients the same way as to editor clients, or document loudly that play clients receive children unparented, and give the editor a "preview as play client" mode.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="f27">
+    <div class="rec-head"><span class="rec-id">F27</span><h3>Published scenes don't carry script attachments made in the editor's live scene</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>What</dt><dd>scripts attached at runtime in the editor (<code>AddScript</code> from an installer, followed by <code>Server:SaveSceneHierarchy()</code>) were present in the editor but absent on the play server after publishing: <code>FindScript("Scar Viewmodel")</code> and <code>FindScript("Scar Replay")</code> returned nil there, while every script file had the new version. The first-person weapon and the round replay simply did not exist in the published game, with no error.</dd>
+      <dt>Where</dt><dd>the publish pipeline boots <code>Scenes/InitScene.aeScene</code>; the live editor scene, and whatever <code>SaveSceneHierarchy</code> saved, is not what gets published.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Workaround</h4><p><code>Scar:repairScripts()</code> attaches any missing SCAR script at server start (verified on the play server: "attached missing scripts: Scar Viewmodel, Scar Replay").</p></div>
+      <div><h4>Suggested fix</h4><p>publish the editor's current hierarchy, or warn at publish time when the published scene differs from the live one (scripts, objects).</p></div>
+    </div>
+  </article>
+  <article class="record high" id="f28">
+    <div class="rec-head"><span class="rec-id">F28</span><h3>No tool reaches a play client, and the CLI can't publish</h3><span class="sev high">High</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>What</dt><dd><code>run-lua</code>, <code>errors</code> and <code>screenshot</code> work only on the editor framing. A read-only Lua probe can reach the play SERVER, but nothing reaches a play CLIENT: no client Lua, no client errors, no screenshot. Publishing is only a button on the project page (the promised <code>publish</code> CLI command is not in 0.6.5), so each fix needs the maker to click it.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>every play-only bug (F26, F27) shows up as a player's screenshot with no way for the agent to inspect it, which took three publishes to diagnose.</p></div>
+      <div><h4>Workaround</h4><p>every SCAR client sends a one-line health report every 10 s (<code>svDiag</code>: build, fps, phase, viewmodel and avatar state, last errors), kept on the server and readable with the play-server probe.</p></div>
+      <div><h4>Suggested fix</h4><p><code>run-lua --target client</code> and <code>errors</code>/<code>screenshot</code> for play framings; ship <code>virtualmatter publish</code>.</p></div>
+    </div>
+  </article>
+  <article class="record low" id="f29">
+    <div class="rec-head"><span class="rec-id">F29</span><h3><code>virtualmatter open</code> self-update fails from Git Bash</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <p>When a new native client build was available, <code>virtualmatter open</code> run from Git Bash printed <code>tar failed (128): tar: Cannot connect to C: resolve failed</code> and did not start: GNU tar reads <code>C:</code> as a remote host. Running the same command from PowerShell (Windows tar) updated and launched the client. Suggested fix: pass <code>--force-local</code>, or extract with a bundled unzipper.</p>
+  </article>
+  <article class="record med" id="f30">
+    <div class="rec-head"><span class="rec-id">F30</span><h3>Client screenshots away from the player show unstreamed terrain</h3><span class="sev med">Medium</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <p><code>screenshot --client &lt;id&gt; --at x,y,z --rot ...</code> moves only the camera. Streaming and LOD follow the player, so a shot 30 m from the player shows holes, wireframe chunk edges and coarse placeholder ground; the server-side screenshot client was stale at the same time (F13). A lighting A/B (sun angle) could not be judged at all. Suggested fix: move the streaming focus with a screenshot camera, or wait for streaming to settle before capturing.</p>
   </article>
 </section>
 </div></body></html>
