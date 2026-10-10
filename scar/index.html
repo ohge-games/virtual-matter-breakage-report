@@ -131,7 +131,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
 </head><body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 09 Oct 2026 20:39 · 30 breakages (7 critical · 10 high · 8 medium · 5 low)</div>
+  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 10 Oct 2026 07:54 · 31 breakages (7 critical · 10 high · 9 medium · 5 low)</div>
   <h1>Where Virtual Matter Breaks: destruction FPS</h1>
   <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given.</p>
   <div class="facts">
@@ -178,12 +178,14 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
         <tr><td class="mono">F28</td><td><span class="sev high">High</span></td><td><a href="#f28">Editor vs play: no tool reaches a play client (no client Lua, no screenshot, no errors), and the CLI cannot publish; play-only bugs are invisible to the agent</a></td><td>Tooling gap; worked around (client diagnostics RPC)</td></tr>
         <tr><td class="mono">F29</td><td><span class="sev low">Low</span></td><td><a href="#f29"><code>virtualmatter open</code> client self-update fails from Git Bash on Windows (<code>tar: Cannot connect to C: resolve failed</code>)</a></td><td>Worked around (run from PowerShell)</td></tr>
         <tr><td class="mono">F30</td><td><span class="sev med">Medium</span></td><td><a href="#f30"><code>screenshot --client --at</code> moves only the camera; streaming stays with the player, so shots away from the player show holes and placeholder terrain, and the server-side screenshot client can be stale (F13)</a></td><td>Observed; no visual A/B possible away from the player</td></tr>
+        <tr><td class="mono">F31</td><td><span class="sev med">Medium</span></td><td><a href="#f31">Editor vs play: a NewUI window opened with keyboard focus left a browser player unable to close it with keys (Esc / U never reached the game); in the editor's native client the same menu was closed by script during testing, so it never showed</a></td><td>Observed; worked around (click-to-close, no focus)</td></tr>
     </tbody></table></div>
 </section>
 <section id="changelog">
   <h2>Changelog</h2>
   <ul class="changelog">
-    <li><b>9 Oct 2026 (latest):</b> F26-F30, the editor-vs-play gap found after the first friends' playtest of a published build (unparented pooled parts, missing script attachments, no play-client tooling), plus two tooling issues.</li>
+    <li><b>10 Oct 2026 (latest):</b> F31 (a focused menu trapped a browser player).</li>
+    <li><b>9 Oct 2026:</b> F26-F30, the editor-vs-play gap found after the first friends' playtest of a published build (unparented pooled parts, missing script attachments, no play-client tooling), plus two tooling issues.</li>
     <li><b>9 Oct 2026:</b> F24 (HUD windows hidden on a fresh client) and F25 (client-posed objects one frame behind the camera) from the morning playtest.</li>
     <li><b>8 Oct 2026:</b> F23 from a per-frame engine-timer capture and a client-restart A/B.</li>
     <li><b>8 Oct 2026:</b> F21-F22 from the first-person viewmodel work.</li>
@@ -480,6 +482,10 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
   <article class="record med" id="f30">
     <div class="rec-head"><span class="rec-id">F30</span><h3>Client screenshots away from the player show unstreamed terrain</h3><span class="sev med">Medium</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
     <p><code>screenshot --client &lt;id&gt; --at x,y,z --rot ...</code> moves only the camera. Streaming and LOD follow the player, so a shot 30 m from the player shows holes, wireframe chunk edges and coarse placeholder ground; the server-side screenshot client was stale at the same time (F13). A lighting A/B (sun angle) could not be judged at all. Suggested fix: move the streaming focus with a screenshot camera, or wait for streaming to settle before capturing.</p>
+  </article>
+  <article class="record med" id="f31">
+    <div class="rec-head"><span class="rec-id">F31</span><h3>A focused UI window swallowed the keys meant to close it (browser play build)</h3><span class="sev med">Medium</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
+    <p>SCAR's Armory opened with <code>UI:OpenWindow(window, true, false)</code> (focus) and closed on Esc or U read through <code>Input:KeyDown</code>. A player on the published browser build was stuck in it: neither key closed it, and in a browser Esc only releases pointer lock. The editor testing never caught it because the menu was always closed by script. Workaround: open without focus, and give every modal a clickable close button. Suggested fix: document that focused windows consume keyboard input, and keep a guaranteed escape key that reaches scripts (or closes the focused window) in browser builds.</p>
   </article>
 </section>
 </div></body></html>
