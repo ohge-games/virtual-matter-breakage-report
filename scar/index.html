@@ -131,7 +131,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
 </head><body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Final edition · FPS edition (SCAR) · last updated 10 Oct 2026 08:36 · 32 breakages (7 critical · 10 high · 10 medium · 5 low)</div>
+  <div class="eyebrow">Final edition · FPS edition (SCAR) · last updated 10 Oct 2026 08:37 · 32 breakages (7 critical · 10 high · 10 medium · 5 low)</div>
   <div class="final-status">Final edition: project paused 2026-10-10</div>
   <h1>Where Virtual Matter Breaks: destruction FPS</h1>
   <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given. <b>Final edition: project paused 2026-10-10.</b> The build is live on a published play server; "Final state" (below) lists what is published and what is not, and "Final autopsy" (at the end) is the builder's view of the CLI and MCP tooling.</p>
@@ -400,7 +400,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
       <dt>Where</dt><dd>server-side voxel streaming (sending and VoxelServer update) and the headless renderer's load phase.</dd>
     </dl>
     <div class="extra">
-      <div><h4>Measured by connected client</h4><p> | Client connected | Server spike frames (&gt; 60 ms) | Typical spike | |---|---|---| | Native client, about 4 h, 7.4 GB | 56-66 per 25 s | ~100 ms | | None (8 bots playing) | 0 per 25 s (1,386 frames) | | | Fresh native client, 1-3 min after joining | 23-27 per 25 s | ~76 ms |</p></div>
+      <div><h4>Measured by connected client</h4>  <div class="table-scroll"><table><thead><tr><th>Client connected</th><th>Server spike frames (&gt; 60 ms)</th><th>Typical spike</th></tr></thead><tbody><tr><td>Native client, about 4 h, 7.4 GB</td><td>56-66 per 25 s</td><td>~100 ms</td></tr><tr><td>None (8 bots playing)</td><td>0 per 25 s (1,386 frames)</td><td></td></tr><tr><td>Fresh native client, 1-3 min after joining</td><td>23-27 per 25 s</td><td>~76 ms</td></tr></tbody></table></div></div>
       <div><h4>Ruled out by A/B</h4><p>pausing SCAR's 4 Hz re-centring of rig and viewmodel roots changed nothing (56 vs 66 spikes), and parking every bot's viewmodel set far away changed nothing (59).</p></div>
       <div><h4>Physics is not the cost</h4><p>10 tumbling RigidBody debris chunks cost nothing measurable with no client (55 fps, 56 ms worst). With the old client connected, the same throw dropped the server to 29 fps with 12 frames over 100 ms. Moving voxel objects cost through streaming, not simulation.</p></div>
       <div><h4>Impact</h4><p>the server's p99 reaches 100-200 ms during play, though the game's own Lua is about 0.5 ms (bots) to 2 ms. Every client's snapshots and hit registration stall with it.</p></div>
