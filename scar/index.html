@@ -131,9 +131,10 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
 </head><body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Living document · FPS edition (SCAR) · last updated 10 Oct 2026 07:54 · 31 breakages (7 critical · 10 high · 9 medium · 5 low)</div>
+  <div class="eyebrow">Final edition · FPS edition (SCAR) · last updated 10 Oct 2026 08:36 · 32 breakages (7 critical · 10 high · 10 medium · 5 low)</div>
+  <div class="final-status">Final edition: project paused 2026-10-10</div>
   <h1>Where Virtual Matter Breaks: destruction FPS</h1>
-  <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given.</p>
+  <p class="lede">Engine <code>release/iteration073</code> (<code>384c388</code>, built 2026-10-05), native client 73.0.1554, CLI 0.6.5. Found while building SCAR, a destruction FPS whose core loop is persistent terrain edits. Same 5W format as the Ashlight report (v33, <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">https://ohge-games.github.io/virtual-matter-breakage-report/</a>): Who / What / When / Where / Why, then impact, repro, mitigation and suggested fix. IDs are F1, F2... Where an entry extends an Ashlight card, the B-number is given. <b>Final edition: project paused 2026-10-10.</b> The build is live on a published play server; "Final state" (below) lists what is published and what is not, and "Final autopsy" (at the end) is the builder's view of the CLI and MCP tooling.</p>
   <div class="facts">
     <span>Edit framing <b class="mono">18QYJ28E5mDi5I1uRKpoY</b></span>
     <span>Engine <b class="mono">iteration073 · 384c388</b></span>
@@ -143,6 +144,17 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
   </div>
 </header>
 
+<section id="final-state">
+  <h2>Final state</h2>
+  <ul class="plain">
+    <li><b>Paused by the maker on 2026-10-10.</b> These checks were read-only on that day.</li>
+    <li><b>Play server</b> (framing <code>-v1Xr2uEY9AlDVaobkrdS</code>): carries the fourth publish (9 Oct), with every fix through F26. It was in the lobby with one player. That player's health line confirms the F26 fix on a real play client: 10 rigs, first-person set active, no script errors.</li>
+    <li><b>Not yet published:</b> the Armory's X and CLOSE buttons, and opening it without keyboard focus (F31). Until the next publish, a browser player can still get stuck in the Armory on the play server.</li>
+    <li><b>Editor world</b> (framing <code>18QYJ28E5mDi5I1uRKpoY</code>): in the lobby, no clients, bots not forced, no game errors.</li>
+    <li><b>The engine issues that matter most for an FPS:</b><ul class="plain"><li>F17: render holes;</li><li>F23: server spikes caused by streaming to clients;</li><li>F26: play clients get pooled parts unparented;</li><li>F1 and F14: slow or lost edit delivery.</li></ul><p>All four are still open. SCAR designs around them; it cannot fix them.</p></li>
+    <li><b>To resume:</b> read <code>scar/NOTES.md</code>, <code>docs/OVERNIGHT-LOG.md</code>, then this report. Deploy only through the push-only wrapper. Publish from the project page, then run part C of <code>docs/PUBLISH-CHECKLIST.md</code>.</li>
+  </ul>
+</section>
 <section id="index">
   <h2>Breakage index</h2>
   <div class="table-scroll"><table>
@@ -164,7 +176,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
         <tr><td class="mono">F14</td><td><span class="sev crit">Critical</span></td><td><a href="#f14">A freshly joined client receives gameplay edits 12-45 s late; 4 of 10 never arrived at the 2.5 ops/s budget</a></td><td>Measured; designed around</td></tr>
         <tr><td class="mono">F15</td><td><span class="sev high">High</span></td><td><a href="#f15">An object name set after creation (e.g. after <code>Scene:CloneObject</code>) never reaches clients: clones keep the source name</a></td><td>Measured; worked around (ids)</td></tr>
         <tr><td class="mono">F16</td><td><span class="sev high">High</span></td><td><a href="#f16"><code>Scene:CloneObject</code> of a 12-part rig costs ~110 ms of server main thread (~9 ms per voxel part); new objects double the frame time while they stream</a></td><td>Measured</td></tr>
-        <tr><td class="mono">F17</td><td><span class="sev crit">Critical</span></td><td><a href="#f17">Clients draw large terrain regions as grey placeholders with wireframe edges while collision there is correct; the holes follow the view</a></td><td>Observed repeatedly; mitigation testing</td></tr>
+        <tr><td class="mono">F17</td><td><span class="sev crit">Critical</span></td><td><a href="#f17">Clients draw large terrain regions as grey placeholders with wireframe edges while collision there is correct; the holes follow the view</a></td><td>Open; the LOD-bubble mitigation did not help and was removed</td></tr>
         <tr><td class="mono">F18</td><td><span class="sev high">High</span></td><td><a href="#f18"><code>imagine()</code> jobs are silently orphaned by any Lua reset (a <code>.lua</code> push): the progress script stays forever, no error, no asset</a></td><td>Observed 6 times</td></tr>
         <tr><td class="mono">F19</td><td><span class="sev med">Medium</span></td><td><a href="#f19">Small per-frame Lua garbage (~7k tables/s) produced 10-14 ms client GC spikes, charged to whichever script allocates</a></td><td>Measured; fixed in SCAR</td></tr>
         <tr><td class="mono">F20</td><td><span class="sev low">Low</span></td><td><a href="#f20">Scoped zoom (FOV 14) still renders distance-based LOD, so a 4.6x scope magnifies coarse voxels</a></td><td>Observed</td></tr>
@@ -178,22 +190,9 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
         <tr><td class="mono">F28</td><td><span class="sev high">High</span></td><td><a href="#f28">Editor vs play: no tool reaches a play client (no client Lua, no screenshot, no errors), and the CLI cannot publish; play-only bugs are invisible to the agent</a></td><td>Tooling gap; worked around (client diagnostics RPC)</td></tr>
         <tr><td class="mono">F29</td><td><span class="sev low">Low</span></td><td><a href="#f29"><code>virtualmatter open</code> client self-update fails from Git Bash on Windows (<code>tar: Cannot connect to C: resolve failed</code>)</a></td><td>Worked around (run from PowerShell)</td></tr>
         <tr><td class="mono">F30</td><td><span class="sev med">Medium</span></td><td><a href="#f30"><code>screenshot --client --at</code> moves only the camera; streaming stays with the player, so shots away from the player show holes and placeholder terrain, and the server-side screenshot client can be stale (F13)</a></td><td>Observed; no visual A/B possible away from the player</td></tr>
-        <tr><td class="mono">F31</td><td><span class="sev med">Medium</span></td><td><a href="#f31">Editor vs play: a NewUI window opened with keyboard focus left a browser player unable to close it with keys (Esc / U never reached the game); in the editor's native client the same menu was closed by script during testing, so it never showed</a></td><td>Observed; worked around (click-to-close, no focus)</td></tr>
+        <tr><td class="mono">F31</td><td><span class="sev med">Medium</span></td><td><a href="#f31">Editor vs play: a NewUI window opened with keyboard focus left a browser player unable to close it with keys (Esc / U never reached the game); in the editor's native client the same menu was closed by script during testing, so it never showed</a></td><td>Observed; fixed in the editor (click-to-close, no focus), not yet published</td></tr>
+        <tr><td class="mono">F32</td><td><span class="sev med">Medium</span></td><td><a href="#f32">The guide the CLI writes into every folder documents <code>push</code>, <code>fetch</code> and three MCP file tools; the published CLI (0.6.5) has none of them</a></td><td>Confirmed 10 Oct; worked around (own push wrapper)</td></tr>
     </tbody></table></div>
-</section>
-<section id="changelog">
-  <h2>Changelog</h2>
-  <ul class="changelog">
-    <li><b>10 Oct 2026 (latest):</b> F31 (a focused menu trapped a browser player).</li>
-    <li><b>9 Oct 2026:</b> F26-F30, the editor-vs-play gap found after the first friends' playtest of a published build (unparented pooled parts, missing script attachments, no play-client tooling), plus two tooling issues.</li>
-    <li><b>9 Oct 2026:</b> F24 (HUD windows hidden on a fresh client) and F25 (client-posed objects one frame behind the camera) from the morning playtest.</li>
-    <li><b>8 Oct 2026:</b> F23 from a per-frame engine-timer capture and a client-restart A/B.</li>
-    <li><b>8 Oct 2026:</b> F21-F22 from the first-person viewmodel work.</li>
-    <li><b>8 Oct 2026:</b> F15-F20 and N1 from the character and animation work (generated soldier cut into a 12-part rig, procedural animation, scale bench) and the first live playtest (render holes, orphaned generations).</li>
-    <li><b>8 Oct 2026:</b> F4 count 8 (the 8th disconnect followed a 51.8 s upstream stall with no screenshot involved, so screenshots are not the only trigger). Report is now a living document under the Ashlight edition's site.</li>
-    <li><b>8 Oct 2026:</b> F12 (per-op static edit cost), F13 (stale screenshot client after a map-scale rebuild) and F14 (late edits for freshly joined clients) added from the gameplay delivery bench; F4 updated with the client-log stall evidence (7 occurrences).</li>
-    <li><b>8 Oct 2026 (first edition):</b> F1-F11, from the terrain edit bench (B3/B28/B16) and the first SCAR build.</li>
-  </ul>
 </section>
 <section id="cards">
   <h2>The 5Ws, per breakage</h2>
@@ -354,7 +353,8 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
     </dl>
     <div class="extra">
       <div><h4>Collision is fine</h4><p>client rays over a 6 x 5 grid inside a missing region matched the server's terrain heights within the known LOD offset (F5). The client has the voxel data and is not drawing it.</p></div>
-      <div><h4>Mitigation shipped, partial at best</h4><p>a third LOD priority bubble around the player (<code>Client:AddPlayerLODPriorityBubbleShape</code>, radius 25 m, size 0.6). The SDK controller's bubbles are 2 m and 4 m only. A four-direction test from the player's own camera, with the bubble on, still showed grey untextured placeholder ground in one direction. The bubble does not remove the holes.</p></div>
+      <div><h4>Mitigation tried and removed</h4><p>a third LOD priority bubble around the player (<code>Client:AddPlayerLODPriorityBubbleShape</code>, radius 25 m, size 0.6). The SDK controller's bubbles are 2 m and 4 m only. A four-direction test from the player's own camera, with the bubble on, still showed grey untextured placeholder ground in one direction, and distant soldiers looked blobbier with it. It was removed on 9 Oct. A fresh native client showed fewer grey patches than a long-running one (see F23).</p></div>
+      <div><h4>Final status</h4><p>open. Nothing in game code removes the holes.</p></div>
       <div><h4>Suggested fix</h4><p>keep a radius around the camera resident regardless of view direction, and expose the render streamer's budget.</p></div>
     </div>
   </article>
@@ -377,13 +377,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
   </article>
   <article class="record low" id="f20">
     <div class="rec-head"><span class="rec-id">F20</span><h3>A scoped zoom still renders distance LOD</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
-    <p>At FOV 14 (4.6x), the Marksman scope shows the same voxel LOD as the unzoomed view, so distant targets and terrain look coarse when magnified. The renderer picks LOD by distance, not projected size. Suggested fix: scale the LOD distance by FOV, or expose an LOD bias for the active camera. ## N1. What worked (for the engine team)</p>
-    <div class="extra">
-      <div><h4>Cross-scale copy</h4><p><code>Vox:Copy</code> from an hq generated model at scale 0.179 into scale-1 parts resamples cleanly; a 10-part soldier was cut in 0.4 s.</p></div>
-      <div><h4>Rays on scaled objects</h4><p>plain (non-forced) rays hit scaled dynamic objects, unlike B31's forced rays.</p></div>
-      <div><h4>Tint</h4><p><code>VoxelData.tintColor</code> team tint and a damage flash replicate and cost nothing measurable.</p></div>
-      <div><h4>Procedural animation</h4><p>client-side animation of 10 flat 12-part rigs (two-bone IK, world-planted feet, verlet ragdolls) costs 0.28 ms/frame. Server cost is unchanged (p99 16.9 ms).</p></div>
-    </div>
+    <p>At FOV 14 (4.6x), the Marksman scope shows the same voxel LOD as the unzoomed view, so distant targets and terrain look coarse when magnified. The renderer picks LOD by distance, not projected size. Suggested fix: scale the LOD distance by FOV, or expose an LOD bias for the active camera.</p>
   </article>
   <article class="record med" id="f21">
     <div class="rec-head"><span class="rec-id">F21</span><h3>Clients cannot see a streamed object's voxel data</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">↑ index</a></div>
@@ -449,7 +443,7 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
       <dt>Where</dt><dd>object replication to non-editor clients.</dd>
     </dl>
     <div class="extra">
-      <div><h4>Workaround</h4><p>the server publishes each pool's part ids in a networked field (<code>Object.id</code> is the same on server and clients); clients resolve parts with <code>Scene:GetObjectById</code>, parent them under a client-only stand-in root and pose them. Prop groups became top-level objects with world transforms. Verified by forcing the id path on an editor client: 10 rigs resolved by id, torsos on their bots, first-person set active.</p></div>
+      <div><h4>Workaround</h4><p>the server publishes each pool's part ids in a networked field (<code>Object.id</code> is the same on server and clients); clients resolve parts with <code>Scene:GetObjectById</code>, parent them under a client-only stand-in root and pose them. Prop groups became top-level objects with world transforms. Verified by forcing the id path on an editor client: 10 rigs resolved by id, torsos on their bots, first-person set active. <b>Confirmed on a real play client</b> after the next publish (10 Oct, read from its health line on the play server): <code>VM active=true set=1</code>, <code>Avatars rigs=10</code>.</p></div>
       <div><h4>Suggested fix</h4><p>replicate the hierarchy (including empty parents) to play clients the same way as to editor clients, or document loudly that play clients receive children unparented, and give the editor a "preview as play client" mode.</p></div>
     </div>
   </article>
@@ -487,5 +481,104 @@ nav.toc li { break-inside: avoid; padding: 2px 0; }
     <div class="rec-head"><span class="rec-id">F31</span><h3>A focused UI window swallowed the keys meant to close it (browser play build)</h3><span class="sev med">Medium</span><span class="conf">Why: observed</span><a class="back" href="#index">↑ index</a></div>
     <p>SCAR's Armory opened with <code>UI:OpenWindow(window, true, false)</code> (focus) and closed on Esc or U read through <code>Input:KeyDown</code>. A player on the published browser build was stuck in it: neither key closed it, and in a browser Esc only releases pointer lock. The editor testing never caught it because the menu was always closed by script. Workaround: open without focus, and give every modal a clickable close button. Suggested fix: document that focused windows consume keyboard input, and keep a guaranteed escape key that reaches scripts (or closes the focused window) in browser builds.</p>
   </article>
+  <article class="record med" id="f32">
+    <div class="rec-head"><span class="rec-id">F32</span><h3>The guide documents CLI and MCP commands the published CLI doesn't have</h3><span class="sev med">Medium</span><span class="conf">Why: confirmed</span><a class="back" href="#index">↑ index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any coding agent that follows the AGENTS.md the CLI writes into every mirrored folder.</dd>
+      <dt>What</dt><dd>that guide lists <code>npx virtualmatter push [files]</code> ("one-shot deploy, per-file result"), <code>fetch [files]</code>, and the MCP tools <code>patch_file</code>, <code>push_local_files</code> and <code>fetch_files</code>. VM's 8 Oct reply also promised <code>logs [--restarts]</code>, <code>publish</code> and <code>status</code>. On 10 Oct, npm's latest <code>virtualmatter</code> was still 0.6.5 (published 2 Oct). <code>virtualmatter push</code> fails with <code>error: unknown command 'push'</code> (exit 1), <code>logs</code> and <code>fetch</code> do the same, and the MCP server lists none of the three file tools.</dd>
+      <dt>When</dt><dd>the whole SCAR build (8-10 Oct). The folder's guide was written on 8 Oct, and the platform refreshed the world's AGENTS.md and Skills files again on 10 Oct.</dd>
+      <dt>Where</dt><dd>the guide the CLI writes on <code>pull</code>, and the canonical copy at make.virtualmatter.ai/AGENTS.md, compared with the npm release.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>the guide says to prefer <code>push</code> over <code>sync</code>. When <code>push</code> is missing, the only built-in deploy left is <code>sync</code>, the path that broke Ashlight's world (B4, B21, B45, B48).</p></div>
+      <div><h4>Workaround</h4><p>SCAR kept deploying through its own push-only wrapper over the files API (<code>vm-agent-tools</code>, F8).</p></div>
+      <div><h4>Suggested fix</h4><p>publish the release the guide describes, or mark each command in the guide with the CLI version that first has it.</p></div>
+    </div>
+  </article>
 </section>
+<section id="worked">
+  <h2>What worked (for the engine team)</h2>
+  <ul class="plain">
+    <li><b>Cross-scale copy:</b> <code>Vox:Copy</code> from an hq generated model at scale 0.179 into scale-1 parts resamples cleanly; a 10-part soldier was cut in 0.4 s.</li>
+    <li><b>Rays on scaled objects:</b> plain (non-forced) rays hit scaled dynamic objects, unlike B31's forced rays.</li>
+    <li><b>Tint:</b> <code>VoxelData.tintColor</code> team tint and a damage flash replicate and cost nothing measurable.</li>
+    <li><b>Procedural animation:</b> client-side animation of 10 flat 12-part rigs (two-bone IK, world-planted feet, verlet ragdolls) costs 0.28 ms/frame. Server cost is unchanged (p99 16.9 ms).</li>
+    <li><b>Lag compensation is cheap:</b> 8 players firing 214 shots/s with server-side rewind cost nothing measurable (F12).</li>
+    <li><b>RigidBody debris:</b> 10 tumbling soil chunks cost nothing measurable on the server with no client connected. The cost appears only when they stream to a client (F23).</li>
+    <li><b>Object ids:</b> <code>Object.id</code> matches on the server and every client, editor or play. That is what made the F15 and F26 workarounds possible.</li>
+  </ul>
+</section>
+<section id="autopsy" class="autopsy">
+  <h2>Final autopsy: building SCAR through the CLI and MCP</h2>
+  <p class="note">Written by the coding agent (Claude) that built SCAR, when the project was paused (2026-10-10). Ashlight's autopsy (<a href="https://ohge-games.github.io/virtual-matter-breakage-report/#autopsy">https://ohge-games.github.io/virtual-matter-breakage-report/#autopsy</a>) covered the tooling basics: deploy, publish, crash logs and resets. This one covers what a second, harder project changed, and what an FPS exposed that a survival game didn't.</p>
+  <h3>Scale of the work</h3>
+  <ul class="plain">
+    <li><b>Three days, 8-10 Oct, with one agent deploying.</b></li>
+    <li><b>10 game scripts, about 575 KB (11,900 lines) of Lua:</b> server authority, a terrain edit scheduler, bots, HUD, effects, procedural avatars, a first-person viewmodel, round replay, player control and movement.</li>
+    <li><b>Generated content:</b><ul class="plain"><li>two soldier models, cut into 14-part rigs;</li><li>four guns and a spade, each baked twice (rig scale, and 4x density for first person);</li><li>four lobby props;</li><li>14 sounds.</li></ul></li>
+    <li><b>Benches:</b> terrain edit delivery, gameplay edit delivery, a 40-rig scale test, per-frame engine timers, and a 20 s worst-case stress test. A 14-check smoke test and a preflight ran before every publish.</li>
+    <li><b>Playtests:</b> two by the maker in the editor, then a friends' playtest across four publishes.</li>
+  </ul>
+  <h3>What changed since Ashlight</h3>
+  <ul class="plain">
+    <li><b>Nothing in the tooling.</b> VM's 8 Oct reply listed fixes and new commands, but the CLI stayed at 0.6.5 and the engine at iteration073 for the whole project. Every promised command was unavailable (F32), so every deploy still went through the hand-made push-only wrapper (patched for F8).</li>
+    <li><b>The problems moved from plumbing to the client.</b> On Ashlight, the slow parts were deploy, publish and crash logs. On SCAR, the slow part was learning what a player's client actually has: terrain edits (F1, F2, F14), streamed objects (F21, F22), object hierarchy (F26), UI state (F24, F31). All of these differ per client and per framing, and no tool shows them.</li>
+  </ul>
+  <h3>What was genuinely helpful</h3>
+  <ol class="plain">
+    <li><b><code>run-lua</code> on both sides.</b> Client-side Lua found F21 and F24 and fixed a player's missing HUD live. It also let the agent force the play-client code path inside the editor to verify the F26 fix before publishing.</li>
+    <li><b>Engine timers through <code>run-lua</code></b> (<code>AE:GetLogTimers</code>). One 25 s per-frame capture attributed the server stutter to streaming (F23) and cleared the game's Lua. Without it, the stutter would have been blamed on game code.</li>
+    <li><b><code>screenshot --client</code>.</b> Still the only trustworthy image of UI, scope and viewmodel, within F30's limits.</li>
+    <li><b><code>imagine()</code> plus <code>Vox:Copy</code>.</b> A generated soldier became an animatable rig in under a second of engine time. Generated audio covered every gun, dig and UI sound.</li>
+    <li><b><code>open</code>, the native client.</b> A real client for benches and A/B tests, once run from PowerShell (F29).</li>
+    <li><b>Hot reload.</b> Still seconds per iteration, with the cost below.</li>
+  </ol>
+  <h3>What got in the way</h3>
+  <ol class="plain">
+    <li><b>The editor is not the play server (F26, F27, F31).</b><ul class="plain"><li>SCAR was developed and tested in the editor all day, and three of the bugs the friends hit could not appear there. A fourth (F31) was hidden by how it was tested.</li><li>Diagnosing them took three publishes, each needing the maker to click a button, because no tool reaches a play client (F28).</li><li>The game had to grow its own telemetry (<code>svDiag</code>) to see play clients at all.</li></ul></li>
+    <li><b>A push still resets all Lua, and silently kills <code>imagine()</code> jobs (F18).</b> Six generated models were lost before "no pushes while generating" became a rule, so content and code work cannot overlap.</li>
+    <li><b>Visual checks mislead in new ways.</b><ul class="plain"><li>The server-side screenshot client went stale after a map rebuild (F13).</li><li>Client shots away from the player show unstreamed ground (F30).</li><li>A client cannot tell whether an object's voxels have arrived (F21).</li></ul><p>Several "missing object" alarms were tool artefacts, and one real bug (F22) first looked like one.</p></li>
+    <li><b>Edit delivery is invisible.</b><ul class="plain"><li>There is no per-client acknowledgement or pending-edit count.</li><li>The streaming stats read STALLING for healthy clients (F10).</li></ul><p>Measuring F1, F2 and F14 needed a two-sided bench that polls client rays.</p></li>
+    <li><b>Native client disconnects (F4)</b> ended long benches silently, so bots had to carry the long tests.</li>
+    <li><b>The guide is ahead of the release (F32).</b></li>
+  </ol>
+  <h3>What's missing (ranked by how much time it would have saved on SCAR)</h3>
+  <ol class="plain">
+    <li><b>Play-client visibility:</b><ul class="plain"><li>a "preview as play client" mode in the editor;</li><li><code>run-lua --target client</code>, <code>errors</code> and <code>screenshot</code> against a play framing.</li></ul><p>That alone would have caught F26, F27 and F31 before any friend saw them.</p></li>
+    <li><b><code>virtualmatter publish</code> with per-server status,</b> so a fix reaches players without the maker clicking a button.</li>
+    <li><b>Edit-delivery observability:</b> per-client acknowledged chunk versions or a pending-edit count, and a "resync region" call (F1, F2, F14).</li>
+    <li><b>A Lua reset that doesn't kill engine async jobs,</b> or a scoped reload of one script (F18; Ashlight's item 4).</li>
+    <li><b>Screenshots that wait for streaming at the camera,</b> and a client-side "streamed / LOD level" flag on VoxelData (F13, F21, F30).</li>
+    <li><b>Reconnect and session resume in the native client</b> (F3, F4).</li>
+    <li><b>The promised CLI and MCP commands, shipped,</b> or the guide gated by version (F32).</li>
+    <li><b>Input injection for a managed test client</b> (Ashlight's item 5, still missing). Every feel bug still needed the maker to find it: the ducking spring, strafing judder, viewmodel lag and self-collision.</li>
+  </ol>
+  <h3>Tools built for SCAR (in the project's <code>tools/</code> and <code>bench/</code> folders)</h3>
+  <ul class="plain">
+    <li><b>Tests:</b><ul class="plain"><li><code>smoke_core.lua</code> (14 checks) with <code>run_smoke.py</code>;</li><li><code>preflight.lua</code> (health checks with safe fixes);</li><li><code>stress.lua</code> (worst case).</li></ul></li>
+    <li><b>Profiling:</b><ul class="plain"><li><code>frames.lua</code> (frame sampler, server or client);</li><li><code>spike_probe.lua</code> (all 149 engine timers per frame, spike frames against normal ones);</li><li><code>watch_session.py</code>.</li></ul></li>
+    <li><b>Benches:</b> <code>bench/</code>, for edit delivery to clients (F1, F2, F14) and gameplay edit cost (F12).</li>
+    <li><b>Play-client telemetry:</b> the <code>svDiag</code> health line, readable on any server.</li>
+    <li><b>Content:</b> <code>cut_soldier*.lua</code> and <code>cut_weapons.lua</code> turn a generated model into rig parts and HD viewmodel parts.</li>
+    <li><b>Publishing:</b> <code>publish_report.py</code> publishes this report.</li>
+  </ul>
+  <h3>Bottom line</h3>
+  <p>The engine connection is still excellent: an agent can measure almost anything on the server or on a client it can reach. An FPS shows where that stops. What each player's client actually has (terrain, streamed objects, hierarchy, UI) differs per client and per framing, and the play clients that matter most are the ones no tool can see. Make a play client observable, and simulable inside the editor, and most of SCAR's worst days would have been an afternoon.</p>
+</section>
+<section id="changelog">
+  <h2>Changelog</h2>
+  <ul class="changelog">
+    <li><b>10 Oct 2026 (final edition):</b> project paused. F32 (the guide documents commands the published CLI lacks); F17 marked open (the LOD-bubble mitigation was removed); F26 fix confirmed on a real play client; Final state, What worked and Final autopsy sections.</li>
+    <li><b>10 Oct 2026:</b> F31 (a focused menu trapped a browser player).</li>
+    <li><b>9 Oct 2026:</b> F26-F30, the editor-vs-play gap found after the first friends' playtest of a published build (unparented pooled parts, missing script attachments, no play-client tooling), plus two tooling issues.</li>
+    <li><b>9 Oct 2026:</b> F24 (HUD windows hidden on a fresh client) and F25 (client-posed objects one frame behind the camera) from the morning playtest.</li>
+    <li><b>8 Oct 2026:</b> F23 from a per-frame engine-timer capture and a client-restart A/B.</li>
+    <li><b>8 Oct 2026:</b> F21-F22 from the first-person viewmodel work.</li>
+    <li><b>8 Oct 2026:</b> F15-F20 and N1 from the character and animation work (generated soldier cut into a 12-part rig, procedural animation, scale bench) and the first live playtest (render holes, orphaned generations).</li>
+    <li><b>8 Oct 2026:</b> F4 count 8 (the 8th disconnect followed a 51.8 s upstream stall with no screenshot involved, so screenshots are not the only trigger). Report is now a living document under the Ashlight edition's site.</li>
+    <li><b>8 Oct 2026:</b> F12 (per-op static edit cost), F13 (stale screenshot client after a map-scale rebuild) and F14 (late edits for freshly joined clients) added from the gameplay delivery bench; F4 updated with the client-log stall evidence (7 occurrences).</li>
+    <li><b>8 Oct 2026 (first edition):</b> F1-F11, from the terrain edit bench (B3/B28/B16) and the first SCAR build.</li>
+  </ul>
+</section>
+<footer class="mono">Compiled by Claude (Opus 5.5) working through the virtualmatter CLI and MCP, 8&ndash;10 Oct 2026. Final edition: project paused 2026-10-10.</footer>
 </div></body></html>
