@@ -140,9 +140,9 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
 </style>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Iteration076 edition · living document · last updated 21 Oct 2026 · 18 findings (2 critical · 6 high · 5 medium · 5 low)</div>
+  <div class="eyebrow">Iteration076 edition · living document · last updated 21 Oct 2026 (Ashlight round) · 30 findings (2 critical · 10 high · 11 medium · 7 low)</div>
   <h1>Where Virtual Matter Breaks: the move to iteration076</h1>
-  <p class="lede">What changed for two live games when the platform moved from engine <code>release/iteration073</code> to <code>release/iteration076</code> (76.0.20390, <code>24d309b4</code>; native client 76.0.1605; CLI 0.6.8). SCAR (destruction FPS) was moved on 2026-10-20 and has been fixed, improved and republished on 076. Ashlight (souls-dark survival) is still on 073; its migration is staged. Same 5W format as the <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">Ashlight</a> and <a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/">SCAR</a> editions: IDs are M1, M2... and older cards are cited by their B- or F-number. Alongside the breakages, this edition lists what got better, our recommendations, and the questions we would like answered before the next iteration and the new renderer.</p>
+  <p class="lede">What changed for two live games when the platform moved from engine <code>release/iteration073</code> to <code>release/iteration076</code> (76.0.20390, <code>24d309b4</code>; native client 76.0.1605; CLI 0.6.8). SCAR (destruction FPS) was moved on 2026-10-20 and has been fixed, improved and republished on 076. Ashlight (souls-dark survival) is still on 073, although the maker believed it had been moved (see the questions); its version-tolerant 076 fixes and a nine-agent improvement round are live, and only its shader port waits for the move. Same 5W format as the <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">Ashlight</a> and <a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/">SCAR</a> editions: IDs are M1, M2... and older cards are cited by their B- or F-number. Alongside the breakages, this edition lists what got better, our recommendations, and the questions we would like answered before the next iteration and the new renderer.</p>
   <div class="facts">
     <span>Engine <b class="mono">iteration076 · 24d309b4</b></span>
     <span>Client <b>Native, Windows, 76.0.1605</b></span>
@@ -161,6 +161,7 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
     <li><b>Custom shaders become frozen forks.</b> The engine keeps an edited built-in shader with one warning line, even when its inputs changed. Ashlight's light pass reads the wrong uniform block on 076 (M6).</li>
     <li><b>Terrain edits cost more than before</b> in our test: about 80 ms of server compute and a 55-85 ms frame per dig (M7, F12).</li>
     <li><b>The desktop app leaks the sign-in email</b> as the player name (M8).</li>
+    <li><b>Ashlight's own audit found older silent failures too</b>, all on 073: every non-positional sound was silent (M19), pooled enemies left floating eyes on clients (M20), hit prediction never ran because RPCs take 5x longer than the reported ping (M21), and the incremental GC cost half of the client's script time (M22). The fixes are live; the Refuge went from 33 to 42.5 fps.</li>
     <li><b>The new renderer is not in 076.</b> It is the same AEVV renderer. 076 adds look controls (runtime shader defines, VM Sky, god rays, DOF) but no new rendering path; our questions about it are below.</li>
   </ol>
 </section>
@@ -203,6 +204,18 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
         <tr><td class="mono">M16</td><td><span class="sev low">Low</span></td><td><a href="#m16">A connected client keeps playing the old decoding of a replaced sound</a></td><td>SCAR</td><td>Documented</td></tr>
         <tr><td class="mono">M17</td><td><span class="sev low">Low</span></td><td><a href="#m17">Turning fog on turns VM Sky black</a></td><td>SCAR</td><td>Documented</td></tr>
         <tr><td class="mono">M18</td><td><span class="sev low">Low</span></td><td><a href="#m18">8 built-in voxel material images are missing on the server</a></td><td>SCAR</td><td>No effect on SCAR</td></tr>
+        <tr><td class="mono">M19</td><td><span class="sev high">High</span></td><td><a href="#m19"><code>Audio:PlaySound(asset, nil, ...)</code> throws, though the docs type the position <code>Vec3?</code></a></td><td>Ashlight</td><td>Fixed in Ashlight</td></tr>
+        <tr><td class="mono">M20</td><td><span class="sev high">High</span></td><td><a href="#m20"><code>Object.active = false</code> does not replicate to clients</a></td><td>Ashlight</td><td>Worked around in Ashlight</td></tr>
+        <tr><td class="mono">M21</td><td><span class="sev high">High</span></td><td><a href="#m21">RPC round trips take about 5x longer than <code>GetPing</code> reports, and RPCs carry no send time</a></td><td>Ashlight</td><td>Worked around in Ashlight</td></tr>
+        <tr><td class="mono">M22</td><td><span class="sev high">High</span></td><td><a href="#m22">073's incremental Lua GC costs about half of client script time; generational halves it</a></td><td>Ashlight</td><td>Shipped in Ashlight (073 only)</td></tr>
+        <tr><td class="mono">M23</td><td><span class="sev med">Medium</span></td><td><a href="#m23">Window z-order is undocumented and cannot be set</a></td><td>Ashlight</td><td>Worked around</td></tr>
+        <tr><td class="mono">M24</td><td><span class="sev med">Medium</span></td><td><a href="#m24">The SDK Character Controller drops horizontal impulses, and its jump height depends on frame rate</a></td><td>Ashlight</td><td>Worked around</td></tr>
+        <tr><td class="mono">M25</td><td><span class="sev med">Medium</span></td><td><a href="#m25">Particles are budgeted and built entirely in Lua (40-75 µs per particle on 073)</a></td><td>Ashlight</td><td>Budgeted</td></tr>
+        <tr><td class="mono">M26</td><td><span class="sev med">Medium</span></td><td><a href="#m26">Aimed screenshots stream and cull around the player, not the capture camera</a></td><td>Ashlight</td><td>Documented</td></tr>
+        <tr><td class="mono">M27</td><td><span class="sev med">Medium</span></td><td><a href="#m27">The 076 Sky script re-enables VM Sky on every join</a></td><td>Ashlight</td><td>Staged for 076</td></tr>
+        <tr><td class="mono">M28</td><td><span class="sev med">Medium</span></td><td><a href="#m28">There are no user uniforms for post-process passes</a></td><td>Ashlight</td><td>Documented</td></tr>
+        <tr><td class="mono">M29</td><td><span class="sev low">Low</span></td><td><a href="#m29">Engine and performance observability gaps</a></td><td>Ashlight</td><td>Documented</td></tr>
+        <tr><td class="mono">M30</td><td><span class="sev low">Low</span></td><td><a href="#m30">Audio mixing and text quirks</a></td><td>Ashlight</td><td>Documented</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -262,9 +275,9 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
     <dl class="w5">
       <dt>Who</dt><dd>any client-side gameplay that reads surfaces: grenade bounces, decals, impact effects, footstep materials.</dd>
       <dt>What</dt><dd>on clients the three options throw (<code>WithNormal() only supported on server</code>), and so does reading <code>hit.normal</code>, <code>hit.color</code> or <code>hit.material</code> (<code>normal/color/material are read by the server raycast only</code>). <code>hit.obj</code> is nil for every client hit. On the server, reading <code>hit.material</code> without <code>WithMaterial()</code> now throws too.</dd>
-      <dt>When</dt><dd>076.</dd>
+      <dt>When</dt><dd>seen first on 076 in SCAR. <b>Correction (Ashlight round):</b> probes on Ashlight's 073 client show <code>WithColor</code>, <code>WithNormal</code> and <code>ForceStatic</code> already throw on 073 clients, so this predates 076; it is still undocumented.</dd>
       <dt>Where</dt><dd>Cast/Raycast on the client.</dd>
-      <dt>Why</dt><dd>the client copy of static data apparently no longer exposes surface attributes to Lua.</dd>
+      <dt>Why</dt><dd>client rays apparently never exposed surface attributes or static-only filtering to Lua.</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>SCAR on clients: every thrown gadget's local proxy fell through the ground; every bullet impact used the soil palette, with no sparks or ricochets on concrete or steel. Ashlight: the salvage glints and the [E] Salvage prompt (a client <code>WithColor()</code> ray) will disappear on 076.</p></div>
@@ -436,6 +449,102 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
   <article class="record low" id="m18">
     <div class="rec-head"><span class="rec-id">M18</span><h3>8 built-in voxel material images are missing on the server</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">&uarr; index</a></div>
     <p>The 076 boot log lists 8 missing built-in voxel material image ids (the textured materials: stone, concrete, sand and similar). They are absent from the client and the world. SCAR's terrain is pre-baked and its runtime edits use untextured soil, so nothing visible changed; worlds that paint textured materials at runtime may be affected.</p>
+  </article>
+  <article class="record high" id="m19">
+    <div class="rec-head"><span class="rec-id">M19</span><h3><code>Audio:PlaySound(asset, nil, ...)</code> throws, though the docs type the position <code>Vec3?</code></h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any world that plays non-positional sound by passing a nil position (the documented signature allows it).</dd>
+      <dt>What</dt><dd>on the 073 client <code>Audio:PlaySound(asset, nil, vol, false)</code> raises a bare <code>caught (...) exception</code>. <code>PlaySoundRelative(asset, Vec3(0,0,0), ...)</code> works. The Audio API is identical in the 073 and 076 API files.</dd>
+      <dt>When</dt><dd>073 (measured); 076 not yet measured for Ashlight.</dd>
+      <dt>Where</dt><dd>Audio:PlaySound on the client.</dd>
+      <dt>Why</dt><dd>nil is not accepted for the position, and the exception has no message.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>inside Ashlight's <code>pcall</code> this silenced every 2D cue for many rounds: all UI sounds, the death sting, victory, the knells and the Great Knell, the Dimming onset and recede, level-up, eat and drink, the Ashfall rumble; the hunt music layer never started. Nothing was logged, so nobody noticed.</p></div>
+      <div><h4>Repro</h4><p>client: <code>print(pcall(function() return Audio:PlaySound(someAudioAsset, nil, 1, false) end))</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Ashlight plays flat cues with <code>PlaySoundRelative(a, Vec3(0,0,0), v, false)</code>; a live loopback capture confirms the stings play.</p></div>
+      <div><h4>Suggested fix</h4><p>accept nil (meaning listener-relative), or fix the doc type and make the error name the bad argument.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m20">
+    <div class="rec-head"><span class="rec-id">M20</span><h3><code>Object.active = false</code> does not replicate to clients</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any game that pools objects by deactivating them (enemy pools, projectiles, pickups).</dd>
+      <dt>What</dt><dd>a server object set inactive stays <code>active = true</code> on clients, frozen at its last streamed state; its client Lua keeps running and client-made child Meshes stay visible while its voxels stop drawing. An object created and deactivated in the same frame appears on clients, active, at <code>(0,0,0)</code>. A networked-table write in the same frame as the deactivation does arrive.</dd>
+      <dt>When</dt><dd>073.</dd>
+      <dt>Where</dt><dd>object replication.</dd>
+      <dt>Why</dt><dd><code>active</code> is apparently not part of the replicated state.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>every recycled Hollow left floating glowing eyes and hoods where it vanished; never-used pool rigs stood at the hub centre emitting smoke, and every client kept posing 14-16 hidden rigs (about 0.6 ms a frame).</p></div>
+      <div><h4>Repro</h4><p>server: create an object with a client script and a child Mesh, then set <code>active=false</code>; on a client, read <code>obj.active</code> and watch the Mesh.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Ashlight publishes the park position in the same frame as the recycle, moves the rig there once on the client, and skips parked rigs in client updates. Verified live: 8 ghosts to 0, and none after a 14-enemy stress test.</p></div>
+      <div><h4>Suggested fix</h4><p>replicate <code>active</code>, or document exactly what replicates for inactive objects.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m21">
+    <div class="rec-head"><span class="rec-id">M21</span><h3>RPC round trips take about 5x longer than <code>GetPing</code> reports, and RPCs carry no send time</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any game doing client prediction or lag compensation (melee, parry windows, hit confirmation).</dd>
+      <dt>What</dt><dd>on a local connection, a client RPC -> server handler -> owner RPC -> client handler round trip took 125-192 ms while <code>Client:GetPing()</code> read 30 ms. Networked-table updates reached the client every 54-87 ms (13-15 Hz). Handlers get no send timestamp, sequence number or shared clock.</dd>
+      <dt>When</dt><dd>073.</dd>
+      <dt>Where</dt><dd>networking.</dd>
+      <dt>Why</dt><dd>unknown: send-tick rates are undocumented.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Ashlight gated its hit prediction on <code>GetPing</code>, so prediction never ran: remote players got late impacts or none. The server resolved each blow on arrival, so victims flinched up to 0.29 s before the blade connected.</p></div>
+      <div><h4>Repro</h4><p>time an echo RPC with <code>AE:GetDebugTime()</code> and compare it with <code>Client:GetPing()</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Ashlight measures click-to-confirm time itself (a running average per swing type, now 0.27 s for a light swing) and judges blows at the blade's contact frame. Live check: 4 of 4 swings predicted, none late.</p></div>
+      <div><h4>Suggested fix</h4><p>document RPC and networked-table send rates, offer an immediate-send flag, report the round trip that game code actually sees, and pass a client send time (or a shared clock) to handlers.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m22">
+    <div class="rec-head"><span class="rec-id">M22</span><h3>073's incremental Lua GC costs about half of client script time; generational halves it</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every world still on 073 (076 already defaults to generational).</dd>
+      <dt>What</dt><dd>the incremental collector charges its steps to whichever script allocates; in Ashlight that is the procedural rig poser (about 9 KB of Vec3/Quat garbage per pose). <code>collectgarbage('generational')</code> took client script update from 20.0 to 8.7 ms and from 15.3 to 7.5 ms in two A/B/A runs.</dd>
+      <dt>When</dt><dd>073.</dd>
+      <dt>Where</dt><dd>Lua runtime, client and server.</dd>
+      <dt>Why</dt><dd>the default GC mode.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>after the deploy (this plus the other Ashlight fixes): the Refuge client went from 33 to 42.5 fps (script update 19 to 6.6 ms); the idle server's update went from 12.3-12.9 to 6.65 ms (p99 25 to 8.4 ms) and its GC step from 2.2 to 0.17 ms. The client heap peaks higher between major collections (about 90 MB, collecting back to 18.5 MB); no leak.</p></div>
+      <div><h4>Repro</h4><p>A/B: sample <code>SUF/Update Frame</code> for 8 s in each mode.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Ashlight switches to generational once per Lua state, on 073 only, behind a flag.</p></div>
+      <div><h4>Suggested fix</h4><p>confirm generational is safe on the 073 Lua build and make it the default there too; document the heap-peak trade-off.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m23">
+    <div class="rec-head"><span class="rec-id">M23</span><h3>Window z-order is undocumented and cannot be set</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Among <code>stayOnBottom</code> windows the earliest-created draws on top, and toggling <code>visible</code> does not reorder them. There is no <code>zOrder</code> or <code>BringToFront</code>. In Ashlight this hid the status pills under the vitals plate and put the Dread vignette over the whole HUD (55% darker at full Dread); both were fixed by changing the creation order. Suggested fix: an explicit z-order, or document the rule.</p>
+  </article>
+  <article class="record med" id="m24">
+    <div class="rec-head"><span class="rec-id">M24</span><h3>The SDK Character Controller drops horizontal impulses, and its jump height depends on frame rate</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p><code>updateControls</code> overwrites <code>vel.x/z</code> every frame, so a horizontal <code>setVelocity()</code> lasts one frame: Ashlight's boss throws (6-9 m/s) only made players hop in place. Velocity is applied before gravity, so <code>jumpHeight</code> 2.5 gives a 2.84 m apex at 30 fps. The server never checks the client-authoritative <code>setPosition</code>, which is sent every moving frame. Suggested fixes: an <code>addImpulse</code>, half-step integration, and an optional speed sanity check.</p>
+  </article>
+  <article class="record med" id="m25">
+    <div class="rec-head"><span class="rec-id">M25</span><h3>Particles are budgeted and built entirely in Lua (40-75 µs per particle on 073)</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>The shared Particle Updater rebuilds one mesh every frame; 40 live particles cost 1.5-3.7 ms on Ashlight's 073 client, so Ashlight caps ambient effects at 40 for the whole client. One far-away emitter (Black Fog at the map edge, 140 m from the tutorial) silently starved every other effect, lantern flames included. 076 is about 10x cheaper (see What got better). Suggested fix: a native emitter or billboard path with per-emitter budgets and a live-count getter.</p>
+  </article>
+  <article class="record med" id="m26">
+    <div class="rec-head"><span class="rec-id">M26</span><h3>Aimed screenshots stream and cull around the player, not the capture camera</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>With <code>screenshot --client N --at/--rot</code>, streaming and LOD stay centred on the player (1-2 m blocks 200 m away), the particle updater culls against the player's camera, and <code>Scene:GetActiveCamera()</code> still returns the player camera, so distance-scaled effects are wrong in aimed shots. Freshly spawned Lua particles are also often missing from captures. Suggested fix: let <code>--at</code> move the streaming focus and the active camera, and wait for streaming before capturing.</p>
+  </article>
+  <article class="record med" id="m27">
+    <div class="rec-head"><span class="rec-id">M27</span><h3>The 076 Sky script re-enables VM Sky on every join</h3><span class="sev med">Medium</span><span class="conf">Why: confirmed in code</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Sky.lua answers each client's start with the server's serialized <code>render</code> flag and calls <code>SetSkyEnabled(true)</code>, so a game that hides the sky shows it for up to 10 s after each join. Ashlight now calls the script's own <code>queueSerializedRender(false)</code> on 076. Suggested fix: a documented "game owns the sky" switch.</p>
+  </article>
+  <article class="record med" id="m28">
+    <div class="rec-head"><span class="rec-id">M28</span><h3>There are no user uniforms for post-process passes</h3><span class="sev med">Medium</span><span class="conf">Why: confirmed</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Ashlight packs its whole light state (lantern, hub and beacon radii, weather, Dread, and now a style bit) into the three <code>Dev/Fog/*</code> floats as exact integers below 2^24, because there is no other way to get data into a composite pass. Its 076 "ember and ink" prototype (banded light, ink edges; compiles with glslang, off by default) uses bit 22. Suggested fix: <code>Client:SetPostUniform(i, Vec4)</code> or a documented user uniform block.</p>
+  </article>
+  <article class="record low" id="m29">
+    <div class="rec-head"><span class="rec-id">M29</span><h3>Engine and performance observability gaps</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p><code>AE:GetLogTime</code> returns the last value of timers that did not run this frame (an idle server reads <code>UpdateOps</code> 5.96 ms every frame). <code>GetNetworkFlow</code> counts RPCs only, so networked-table and transform replication are invisible. Reading <code>obj.pos</code> right after writing it costs about 7 µs against 0.3-0.5 µs. The headless render costs 5-5.6 ms, about 30% of an idle server frame. Client Lua has no <code>os</code>, and client <code>print</code> output does not reach <code>logs</code>.</p>
+  </article>
+  <article class="record low" id="m30">
+    <div class="rec-head"><span class="rec-id">M30</span><h3>Audio mixing and text quirks</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Rolloff measures as minDistance/d while <code>attenuation</code> reads 1.0; there is no gain above 1 and no buses or ducking (Ashlight carries about 300 lines of Lua mixer). The editor's <code>Editor/MusicVolume</code> config silently mutes <code>PlayMusic</code> for a maker testing in the editor. Label outlines and shadows ignore text alpha, leaving black ghost text when a banner fades. <code>Widget:Set{}</code> applies part of a table before throwing on an unknown key, and the error does not name the key.</p>
   </article>
 </section>
 
@@ -488,16 +597,17 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
 
 <section id="ashlight">
   <h2>Ashlight: migration plan and the renderer concept</h2>
-  <p>Ashlight is still on <code>release/iteration073</code> (73.0.20220, read live on 2026-10-21). Its play server has not run since 2026-10-07. Nothing is broken today; the breakages below apply the moment it moves. The CLI has no way to move a world, so step 2 needs the platform.</p>
+  <p>Ashlight is still on <code>release/iteration073</code> (73.0.20220): on 2026-10-21 the maker believed it had been updated to 076, but its editor (booted 04:25 UTC), its native client download and its play server all still report 073. The CLI has no way to move a world, so step 2 needs the platform.</p>
   <div class="table-scroll"><table>
     <thead><tr><th>Step</th><th>Work</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td class="mono">1</td><td>Stage version-tolerant fixes: 18 <code>receiveTransform</code> writes (M1), 16 <code>AddScript</code> calls (M3; the player spawn has no guard, so every join would abort), sky, sun, god rays and lens flare (M5), the salvage ray (M4), and a port of the light pass <code>ssao2.fs</code> to the 076 <code>FogFrame</code> inputs (M6). An audit of every other removed member found none in use, and all 361 <code>Widget:Set{}</code> keys exist on 076.</td><td>Done: 42 patches in 13 files, luachk clean; the Lua is safe on 073 (checked live: <code>Object.receiveTransform</code> reads nil there). The shader port is held until the move.</td></tr>
-      <tr><td class="mono">2</td><td>The platform moves Ashlight to iteration076. Confirm with the boot log: <code>Version 76…</code> and <code>maker edit - kept</code> for <code>ssao2.fs</code> and <code>common.glsl</code>.</td><td>Requested in this report</td></tr>
+      <tr><td class="mono">1</td><td>Stage version-tolerant fixes: 18 <code>receiveTransform</code> writes (M1), 16 <code>AddScript</code> calls (M3; the player spawn has no guard, so every join would abort), sky, sun, god rays and lens flare (M5), the salvage ray (M4), and a port of the light pass <code>ssao2.fs</code> to the 076 <code>FogFrame</code> inputs (M6). An audit of every other removed member found none in use, and all 361 <code>Widget:Set{}</code> keys exist on 076.</td><td>Done and <b>deployed</b> 2026-10-21 (safe on 073; verified live: 13/13 rig VoxelData take client transforms, errors empty). The shader port is held until the move.</td></tr>
+      <tr><td class="mono">1b</td><td>Nine-agent round on 073 (UI, combat, enemy models, responsiveness, effects, audio, performance, bugs, appeal): 132 patches in 20 scripts plus 41 new or remastered sounds, all version-tolerant. Cards M19-M30 come from it.</td><td>Deployed 2026-10-21. Verified live: name scrub, 2D audio, contact-frame combat (4/4 predicted), no ghost rigs after a 14-enemy stress test, Refuge 33 to 42.5 fps, idle server update 12.5 to 6.65 ms.</td></tr>
+      <tr><td class="mono">2</td><td>The platform moves Ashlight to iteration076. Confirm with the boot log: <code>Version 76…</code> and <code>maker edit - kept</code> for <code>ssao2.fs</code> and <code>common.glsl</code>.</td><td>Requested in this report; still pending</td></tr>
       <tr><td class="mono">3</td><td>One push of all fixes plus the shader port; check <code>errors</code>, <code>Client:GetShaderErrors()</code>, and real-client screenshots at the hub, the Undercroft and during the Dimming; smoke a join, a rig bind, the Abbot boss and an NPC.</td><td>Waiting on step 2</td></tr>
       <tr><td class="mono">4</td><td>Re-measure the 073 performance rules on 076: idle server, per-object cost, client shadows, particles.</td><td>Waiting on step 2</td></tr>
       <tr><td class="mono">5</td><td>Republish the play server (played scene, then verify the boot self-repair).</td><td>Waiting on step 2</td></tr>
-      <tr><td class="mono">6</td><td>Style prototype behind a graphics setting, in the order below; judge on a native client and in a browser.</td><td>Designed; built after step 3</td></tr>
+      <tr><td class="mono">6</td><td>Style prototype behind a graphics setting, in the order below; judge on a native client and in a browser.</td><td>Lua half live (ward lines at the exact holy radius, beacon kindle wave). Shader half staged: banded light and ink edges, off by default, compiles with glslang; turned on with <code>Ashlight.inkStyle = true</code> after the move.</td></tr>
       <tr><td class="mono">7</td><td>On each engine move, diff <code>Shaders/</code> and the API and grep the log for new renderer subsystems before investing further in hand-written passes.</td><td>Ongoing</td></tr>
     </tbody>
   </table></div>
@@ -525,6 +635,8 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
     <li><b>Fix the nickname.</b> Never pass the sign-in email to worlds (M8).</li>
     <li><b>Clean generator audio</b> (DC block, high-pass, loudness normalisation) and document the client's output chain (M10, M11).</li>
     <li><b>Render after LateUpdate</b> or document the order (M9); allow surface rays on clients (M4).</li>
+    <li><b>Make silent failures loud.</b> Ashlight's audit found three more silent breaks, all on 073: every 2D sound (M19), client roof and ground rays (M4), and pooled objects that never deactivate on clients (M20). A nil position, a server-only ray option and an inactive flag each failed without a log line.</li>
+    <li><b>Document the network budget</b> (send rates, the real round trip, timestamps) so games can predict honestly (M21), and make generational GC the 073 default if it is safe (M22).</li>
     <li><b>CLI:</b> warn when <code>publish</code> would send a stale InitScene (M13); do not report a conflict when content is unchanged (M15); show the engine iteration in <code>status</code>.</li>
   </ol>
 </section>
@@ -545,6 +657,10 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
   <ol class="qs">
     <li><b>Will makers get notice and a changelog before their worlds move, and can a world be pinned or tested on a copy first?</b><span class="why">See M12. SCAR broke silently; Ashlight is still on 073 and needs a planned move.</span></li>
     <li><b>Can old engine objects keep deprecated aliases for one iteration?</b><span class="why">See M1-M3.</span></li>
+    <li><b>How does a maker move a world to a new iteration?</b><span class="why">The maker believed Ashlight had been updated to 076 on 2026-10-21, but its editor, client and play server all still report <code>release/iteration073</code>; Update play servers only republishes the scene. We found no setting in the CLI or on the project page.</span></li>
+    <li><b>Is <code>AddScript(path)</code> still accepted on 076?</b><span class="why">SCAR's agents saw it both work and throw <code>expected a LuaFile Asset</code>; Ashlight's helper tries the path, then the Asset.</span></li>
+    <li><b>What are the send rates for RPCs and networked tables, and can a game get a send timestamp?</b><span class="why">See M21.</span></li>
+    <li><b>Is <code>collectgarbage('generational')</code> safe on the 073 Lua build?</b><span class="why">See M22. Ashlight runs it on 073 now.</span></li>
     <li><b>Is the <code>FogFrame</code> uniform block the stable interface for composite-pass shaders, and is there a supported way to pass custom uniforms to a post pass?</b><span class="why">Ashlight currently smuggles game state through <code>Dev/Fog/*</code> as exact integers below 2^24.</span></li>
     <li><b>Is the server-side voxel multithreading still planned, and in which iteration?</b><span class="why">It is the fix for M7 and F12.</span></li>
     <li><b>Why are surface attributes no longer readable from client rays?</b><span class="why">If it is a deliberate security or memory choice, documenting it would save every maker a debugging session (M4).</span></li>
@@ -552,7 +668,9 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
   <h3 class="group">Audio and platform</h3>
   <ol class="qs">
     <li><b>Is there a master high-pass or limiter on the client, and will per-source filters or buses come?</b><span class="why">See M11. Distance muffling and music ducking are not possible today.</span></li>
-    <li><b>Can text-to-sound output be normalised?</b><span class="why">See M10.</span></li>
+    <li><b>Can text-to-sound output be normalised?</b><span class="why">See M10. Ashlight's 20 takes ranged from -50.6 to -8.3 LUFS for similar prompts, and 3 were almost entirely sub-bass.</span></li>
+    <li><b>Will <code>active</code> replicate to clients, and is there a supported pooling pattern?</b><span class="why">See M20.</span></li>
+    <li><b>Is <code>Input:Key</code> scancode- or layout-based, and is an action map or rebinding API planned?</b><span class="why">AZERTY players would find movement on the parry and skill keys; Ashlight has no rebinding.</span></li>
     <li><b>Can the desktop app keep more than one engine build, so makers can open older worlds?</b><span class="why">Installing the 076 client removed the 073 one.</span></li>
   </ol>
 </section>
@@ -560,7 +678,8 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
 <section id="changelog">
   <h2>Changelog</h2>
   <ul class="changelog">
-    <li><b>21 Oct 2026:</b> first edition. M1-M18 from the SCAR 076 audit and deploy, the Ashlight migration recon and staging, audio loopback measurements and the terrain edit-cost probe.</li>
+    <li><b>21 Oct 2026, later:</b> Ashlight round: M19-M30 from nine Ashlight agents (UI, combat, enemies, responsiveness, effects, audio, performance, bugs, appeal) and the deploy of 132 patches and 41 sounds; a correction to M4 (client ray options also throw on 073); SCAR's new sounds verified in a live bot match.</li>
+    <li><b>21 Oct 2026:</b> first edition. M1-M30 from the SCAR 076 audit and deploy, the Ashlight migration recon and staging, audio loopback measurements and the terrain edit-cost probe.</li>
   </ul>
 </section>
 
@@ -569,9 +688,9 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
 </head><body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Iteration076 edition · living document · last updated 21 Oct 2026 · 18 findings (2 critical · 6 high · 5 medium · 5 low)</div>
+  <div class="eyebrow">Iteration076 edition · living document · last updated 21 Oct 2026 (Ashlight round) · 30 findings (2 critical · 10 high · 11 medium · 7 low)</div>
   <h1>Where Virtual Matter Breaks: the move to iteration076</h1>
-  <p class="lede">What changed for two live games when the platform moved from engine <code>release/iteration073</code> to <code>release/iteration076</code> (76.0.20390, <code>24d309b4</code>; native client 76.0.1605; CLI 0.6.8). SCAR (destruction FPS) was moved on 2026-10-20 and has been fixed, improved and republished on 076. Ashlight (souls-dark survival) is still on 073; its migration is staged. Same 5W format as the <a href="../">Ashlight</a> and <a href="../scar/">SCAR</a> editions: IDs are M1, M2... and older cards are cited by their B- or F-number. Alongside the breakages, this edition lists what got better, our recommendations, and the questions we would like answered before the next iteration and the new renderer.</p>
+  <p class="lede">What changed for two live games when the platform moved from engine <code>release/iteration073</code> to <code>release/iteration076</code> (76.0.20390, <code>24d309b4</code>; native client 76.0.1605; CLI 0.6.8). SCAR (destruction FPS) was moved on 2026-10-20 and has been fixed, improved and republished on 076. Ashlight (souls-dark survival) is still on 073, although the maker believed it had been moved (see the questions); its version-tolerant 076 fixes and a nine-agent improvement round are live, and only its shader port waits for the move. Same 5W format as the <a href="../">Ashlight</a> and <a href="../scar/">SCAR</a> editions: IDs are M1, M2... and older cards are cited by their B- or F-number. Alongside the breakages, this edition lists what got better, our recommendations, and the questions we would like answered before the next iteration and the new renderer.</p>
   <div class="facts">
     <span>Engine <b class="mono">iteration076 · 24d309b4</b></span>
     <span>Client <b>Native, Windows, 76.0.1605</b></span>
@@ -590,6 +709,7 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
     <li><b>Custom shaders become frozen forks.</b> The engine keeps an edited built-in shader with one warning line, even when its inputs changed. Ashlight's light pass reads the wrong uniform block on 076 (M6).</li>
     <li><b>Terrain edits cost more than before</b> in our test: about 80 ms of server compute and a 55-85 ms frame per dig (M7, F12).</li>
     <li><b>The desktop app leaks the sign-in email</b> as the player name (M8).</li>
+    <li><b>Ashlight's own audit found older silent failures too</b>, all on 073: every non-positional sound was silent (M19), pooled enemies left floating eyes on clients (M20), hit prediction never ran because RPCs take 5x longer than the reported ping (M21), and the incremental GC cost half of the client's script time (M22). The fixes are live; the Refuge went from 33 to 42.5 fps.</li>
     <li><b>The new renderer is not in 076.</b> It is the same AEVV renderer. 076 adds look controls (runtime shader defines, VM Sky, god rays, DOF) but no new rendering path; our questions about it are below.</li>
   </ol>
 </section>
@@ -632,6 +752,18 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
         <tr><td class="mono">M16</td><td><span class="sev low">Low</span></td><td><a href="#m16">A connected client keeps playing the old decoding of a replaced sound</a></td><td>SCAR</td><td>Documented</td></tr>
         <tr><td class="mono">M17</td><td><span class="sev low">Low</span></td><td><a href="#m17">Turning fog on turns VM Sky black</a></td><td>SCAR</td><td>Documented</td></tr>
         <tr><td class="mono">M18</td><td><span class="sev low">Low</span></td><td><a href="#m18">8 built-in voxel material images are missing on the server</a></td><td>SCAR</td><td>No effect on SCAR</td></tr>
+        <tr><td class="mono">M19</td><td><span class="sev high">High</span></td><td><a href="#m19"><code>Audio:PlaySound(asset, nil, ...)</code> throws, though the docs type the position <code>Vec3?</code></a></td><td>Ashlight</td><td>Fixed in Ashlight</td></tr>
+        <tr><td class="mono">M20</td><td><span class="sev high">High</span></td><td><a href="#m20"><code>Object.active = false</code> does not replicate to clients</a></td><td>Ashlight</td><td>Worked around in Ashlight</td></tr>
+        <tr><td class="mono">M21</td><td><span class="sev high">High</span></td><td><a href="#m21">RPC round trips take about 5x longer than <code>GetPing</code> reports, and RPCs carry no send time</a></td><td>Ashlight</td><td>Worked around in Ashlight</td></tr>
+        <tr><td class="mono">M22</td><td><span class="sev high">High</span></td><td><a href="#m22">073's incremental Lua GC costs about half of client script time; generational halves it</a></td><td>Ashlight</td><td>Shipped in Ashlight (073 only)</td></tr>
+        <tr><td class="mono">M23</td><td><span class="sev med">Medium</span></td><td><a href="#m23">Window z-order is undocumented and cannot be set</a></td><td>Ashlight</td><td>Worked around</td></tr>
+        <tr><td class="mono">M24</td><td><span class="sev med">Medium</span></td><td><a href="#m24">The SDK Character Controller drops horizontal impulses, and its jump height depends on frame rate</a></td><td>Ashlight</td><td>Worked around</td></tr>
+        <tr><td class="mono">M25</td><td><span class="sev med">Medium</span></td><td><a href="#m25">Particles are budgeted and built entirely in Lua (40-75 µs per particle on 073)</a></td><td>Ashlight</td><td>Budgeted</td></tr>
+        <tr><td class="mono">M26</td><td><span class="sev med">Medium</span></td><td><a href="#m26">Aimed screenshots stream and cull around the player, not the capture camera</a></td><td>Ashlight</td><td>Documented</td></tr>
+        <tr><td class="mono">M27</td><td><span class="sev med">Medium</span></td><td><a href="#m27">The 076 Sky script re-enables VM Sky on every join</a></td><td>Ashlight</td><td>Staged for 076</td></tr>
+        <tr><td class="mono">M28</td><td><span class="sev med">Medium</span></td><td><a href="#m28">There are no user uniforms for post-process passes</a></td><td>Ashlight</td><td>Documented</td></tr>
+        <tr><td class="mono">M29</td><td><span class="sev low">Low</span></td><td><a href="#m29">Engine and performance observability gaps</a></td><td>Ashlight</td><td>Documented</td></tr>
+        <tr><td class="mono">M30</td><td><span class="sev low">Low</span></td><td><a href="#m30">Audio mixing and text quirks</a></td><td>Ashlight</td><td>Documented</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -691,9 +823,9 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
     <dl class="w5">
       <dt>Who</dt><dd>any client-side gameplay that reads surfaces: grenade bounces, decals, impact effects, footstep materials.</dd>
       <dt>What</dt><dd>on clients the three options throw (<code>WithNormal() only supported on server</code>), and so does reading <code>hit.normal</code>, <code>hit.color</code> or <code>hit.material</code> (<code>normal/color/material are read by the server raycast only</code>). <code>hit.obj</code> is nil for every client hit. On the server, reading <code>hit.material</code> without <code>WithMaterial()</code> now throws too.</dd>
-      <dt>When</dt><dd>076.</dd>
+      <dt>When</dt><dd>seen first on 076 in SCAR. <b>Correction (Ashlight round):</b> probes on Ashlight's 073 client show <code>WithColor</code>, <code>WithNormal</code> and <code>ForceStatic</code> already throw on 073 clients, so this predates 076; it is still undocumented.</dd>
       <dt>Where</dt><dd>Cast/Raycast on the client.</dd>
-      <dt>Why</dt><dd>the client copy of static data apparently no longer exposes surface attributes to Lua.</dd>
+      <dt>Why</dt><dd>client rays apparently never exposed surface attributes or static-only filtering to Lua.</dd>
     </dl>
     <div class="extra">
       <div><h4>Impact</h4><p>SCAR on clients: every thrown gadget's local proxy fell through the ground; every bullet impact used the soil palette, with no sparks or ricochets on concrete or steel. Ashlight: the salvage glints and the [E] Salvage prompt (a client <code>WithColor()</code> ray) will disappear on 076.</p></div>
@@ -866,6 +998,102 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
     <div class="rec-head"><span class="rec-id">M18</span><h3>8 built-in voxel material images are missing on the server</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">&uarr; index</a></div>
     <p>The 076 boot log lists 8 missing built-in voxel material image ids (the textured materials: stone, concrete, sand and similar). They are absent from the client and the world. SCAR's terrain is pre-baked and its runtime edits use untextured soil, so nothing visible changed; worlds that paint textured materials at runtime may be affected.</p>
   </article>
+  <article class="record high" id="m19">
+    <div class="rec-head"><span class="rec-id">M19</span><h3><code>Audio:PlaySound(asset, nil, ...)</code> throws, though the docs type the position <code>Vec3?</code></h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any world that plays non-positional sound by passing a nil position (the documented signature allows it).</dd>
+      <dt>What</dt><dd>on the 073 client <code>Audio:PlaySound(asset, nil, vol, false)</code> raises a bare <code>caught (...) exception</code>. <code>PlaySoundRelative(asset, Vec3(0,0,0), ...)</code> works. The Audio API is identical in the 073 and 076 API files.</dd>
+      <dt>When</dt><dd>073 (measured); 076 not yet measured for Ashlight.</dd>
+      <dt>Where</dt><dd>Audio:PlaySound on the client.</dd>
+      <dt>Why</dt><dd>nil is not accepted for the position, and the exception has no message.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>inside Ashlight's <code>pcall</code> this silenced every 2D cue for many rounds: all UI sounds, the death sting, victory, the knells and the Great Knell, the Dimming onset and recede, level-up, eat and drink, the Ashfall rumble; the hunt music layer never started. Nothing was logged, so nobody noticed.</p></div>
+      <div><h4>Repro</h4><p>client: <code>print(pcall(function() return Audio:PlaySound(someAudioAsset, nil, 1, false) end))</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Ashlight plays flat cues with <code>PlaySoundRelative(a, Vec3(0,0,0), v, false)</code>; a live loopback capture confirms the stings play.</p></div>
+      <div><h4>Suggested fix</h4><p>accept nil (meaning listener-relative), or fix the doc type and make the error name the bad argument.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m20">
+    <div class="rec-head"><span class="rec-id">M20</span><h3><code>Object.active = false</code> does not replicate to clients</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any game that pools objects by deactivating them (enemy pools, projectiles, pickups).</dd>
+      <dt>What</dt><dd>a server object set inactive stays <code>active = true</code> on clients, frozen at its last streamed state; its client Lua keeps running and client-made child Meshes stay visible while its voxels stop drawing. An object created and deactivated in the same frame appears on clients, active, at <code>(0,0,0)</code>. A networked-table write in the same frame as the deactivation does arrive.</dd>
+      <dt>When</dt><dd>073.</dd>
+      <dt>Where</dt><dd>object replication.</dd>
+      <dt>Why</dt><dd><code>active</code> is apparently not part of the replicated state.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>every recycled Hollow left floating glowing eyes and hoods where it vanished; never-used pool rigs stood at the hub centre emitting smoke, and every client kept posing 14-16 hidden rigs (about 0.6 ms a frame).</p></div>
+      <div><h4>Repro</h4><p>server: create an object with a client script and a child Mesh, then set <code>active=false</code>; on a client, read <code>obj.active</code> and watch the Mesh.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Ashlight publishes the park position in the same frame as the recycle, moves the rig there once on the client, and skips parked rigs in client updates. Verified live: 8 ghosts to 0, and none after a 14-enemy stress test.</p></div>
+      <div><h4>Suggested fix</h4><p>replicate <code>active</code>, or document exactly what replicates for inactive objects.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m21">
+    <div class="rec-head"><span class="rec-id">M21</span><h3>RPC round trips take about 5x longer than <code>GetPing</code> reports, and RPCs carry no send time</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any game doing client prediction or lag compensation (melee, parry windows, hit confirmation).</dd>
+      <dt>What</dt><dd>on a local connection, a client RPC -> server handler -> owner RPC -> client handler round trip took 125-192 ms while <code>Client:GetPing()</code> read 30 ms. Networked-table updates reached the client every 54-87 ms (13-15 Hz). Handlers get no send timestamp, sequence number or shared clock.</dd>
+      <dt>When</dt><dd>073.</dd>
+      <dt>Where</dt><dd>networking.</dd>
+      <dt>Why</dt><dd>unknown: send-tick rates are undocumented.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Ashlight gated its hit prediction on <code>GetPing</code>, so prediction never ran: remote players got late impacts or none. The server resolved each blow on arrival, so victims flinched up to 0.29 s before the blade connected.</p></div>
+      <div><h4>Repro</h4><p>time an echo RPC with <code>AE:GetDebugTime()</code> and compare it with <code>Client:GetPing()</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Ashlight measures click-to-confirm time itself (a running average per swing type, now 0.27 s for a light swing) and judges blows at the blade's contact frame. Live check: 4 of 4 swings predicted, none late.</p></div>
+      <div><h4>Suggested fix</h4><p>document RPC and networked-table send rates, offer an immediate-send flag, report the round trip that game code actually sees, and pass a client send time (or a shared clock) to handlers.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m22">
+    <div class="rec-head"><span class="rec-id">M22</span><h3>073's incremental Lua GC costs about half of client script time; generational halves it</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every world still on 073 (076 already defaults to generational).</dd>
+      <dt>What</dt><dd>the incremental collector charges its steps to whichever script allocates; in Ashlight that is the procedural rig poser (about 9 KB of Vec3/Quat garbage per pose). <code>collectgarbage('generational')</code> took client script update from 20.0 to 8.7 ms and from 15.3 to 7.5 ms in two A/B/A runs.</dd>
+      <dt>When</dt><dd>073.</dd>
+      <dt>Where</dt><dd>Lua runtime, client and server.</dd>
+      <dt>Why</dt><dd>the default GC mode.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>after the deploy (this plus the other Ashlight fixes): the Refuge client went from 33 to 42.5 fps (script update 19 to 6.6 ms); the idle server's update went from 12.3-12.9 to 6.65 ms (p99 25 to 8.4 ms) and its GC step from 2.2 to 0.17 ms. The client heap peaks higher between major collections (about 90 MB, collecting back to 18.5 MB); no leak.</p></div>
+      <div><h4>Repro</h4><p>A/B: sample <code>SUF/Update Frame</code> for 8 s in each mode.</p></div>
+      <div><h4>Mitigation shipped</h4><p>Ashlight switches to generational once per Lua state, on 073 only, behind a flag.</p></div>
+      <div><h4>Suggested fix</h4><p>confirm generational is safe on the 073 Lua build and make it the default there too; document the heap-peak trade-off.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m23">
+    <div class="rec-head"><span class="rec-id">M23</span><h3>Window z-order is undocumented and cannot be set</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Among <code>stayOnBottom</code> windows the earliest-created draws on top, and toggling <code>visible</code> does not reorder them. There is no <code>zOrder</code> or <code>BringToFront</code>. In Ashlight this hid the status pills under the vitals plate and put the Dread vignette over the whole HUD (55% darker at full Dread); both were fixed by changing the creation order. Suggested fix: an explicit z-order, or document the rule.</p>
+  </article>
+  <article class="record med" id="m24">
+    <div class="rec-head"><span class="rec-id">M24</span><h3>The SDK Character Controller drops horizontal impulses, and its jump height depends on frame rate</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p><code>updateControls</code> overwrites <code>vel.x/z</code> every frame, so a horizontal <code>setVelocity()</code> lasts one frame: Ashlight's boss throws (6-9 m/s) only made players hop in place. Velocity is applied before gravity, so <code>jumpHeight</code> 2.5 gives a 2.84 m apex at 30 fps. The server never checks the client-authoritative <code>setPosition</code>, which is sent every moving frame. Suggested fixes: an <code>addImpulse</code>, half-step integration, and an optional speed sanity check.</p>
+  </article>
+  <article class="record med" id="m25">
+    <div class="rec-head"><span class="rec-id">M25</span><h3>Particles are budgeted and built entirely in Lua (40-75 µs per particle on 073)</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>The shared Particle Updater rebuilds one mesh every frame; 40 live particles cost 1.5-3.7 ms on Ashlight's 073 client, so Ashlight caps ambient effects at 40 for the whole client. One far-away emitter (Black Fog at the map edge, 140 m from the tutorial) silently starved every other effect, lantern flames included. 076 is about 10x cheaper (see What got better). Suggested fix: a native emitter or billboard path with per-emitter budgets and a live-count getter.</p>
+  </article>
+  <article class="record med" id="m26">
+    <div class="rec-head"><span class="rec-id">M26</span><h3>Aimed screenshots stream and cull around the player, not the capture camera</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>With <code>screenshot --client N --at/--rot</code>, streaming and LOD stay centred on the player (1-2 m blocks 200 m away), the particle updater culls against the player's camera, and <code>Scene:GetActiveCamera()</code> still returns the player camera, so distance-scaled effects are wrong in aimed shots. Freshly spawned Lua particles are also often missing from captures. Suggested fix: let <code>--at</code> move the streaming focus and the active camera, and wait for streaming before capturing.</p>
+  </article>
+  <article class="record med" id="m27">
+    <div class="rec-head"><span class="rec-id">M27</span><h3>The 076 Sky script re-enables VM Sky on every join</h3><span class="sev med">Medium</span><span class="conf">Why: confirmed in code</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Sky.lua answers each client's start with the server's serialized <code>render</code> flag and calls <code>SetSkyEnabled(true)</code>, so a game that hides the sky shows it for up to 10 s after each join. Ashlight now calls the script's own <code>queueSerializedRender(false)</code> on 076. Suggested fix: a documented "game owns the sky" switch.</p>
+  </article>
+  <article class="record med" id="m28">
+    <div class="rec-head"><span class="rec-id">M28</span><h3>There are no user uniforms for post-process passes</h3><span class="sev med">Medium</span><span class="conf">Why: confirmed</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Ashlight packs its whole light state (lantern, hub and beacon radii, weather, Dread, and now a style bit) into the three <code>Dev/Fog/*</code> floats as exact integers below 2^24, because there is no other way to get data into a composite pass. Its 076 "ember and ink" prototype (banded light, ink edges; compiles with glslang, off by default) uses bit 22. Suggested fix: <code>Client:SetPostUniform(i, Vec4)</code> or a documented user uniform block.</p>
+  </article>
+  <article class="record low" id="m29">
+    <div class="rec-head"><span class="rec-id">M29</span><h3>Engine and performance observability gaps</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p><code>AE:GetLogTime</code> returns the last value of timers that did not run this frame (an idle server reads <code>UpdateOps</code> 5.96 ms every frame). <code>GetNetworkFlow</code> counts RPCs only, so networked-table and transform replication are invisible. Reading <code>obj.pos</code> right after writing it costs about 7 µs against 0.3-0.5 µs. The headless render costs 5-5.6 ms, about 30% of an idle server frame. Client Lua has no <code>os</code>, and client <code>print</code> output does not reach <code>logs</code>.</p>
+  </article>
+  <article class="record low" id="m30">
+    <div class="rec-head"><span class="rec-id">M30</span><h3>Audio mixing and text quirks</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Rolloff measures as minDistance/d while <code>attenuation</code> reads 1.0; there is no gain above 1 and no buses or ducking (Ashlight carries about 300 lines of Lua mixer). The editor's <code>Editor/MusicVolume</code> config silently mutes <code>PlayMusic</code> for a maker testing in the editor. Label outlines and shadows ignore text alpha, leaving black ghost text when a banner fades. <code>Widget:Set{}</code> applies part of a table before throwing on an unknown key, and the error does not name the key.</p>
+  </article>
 </section>
 
 <section id="retest">
@@ -917,16 +1145,17 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
 
 <section id="ashlight">
   <h2>Ashlight: migration plan and the renderer concept</h2>
-  <p>Ashlight is still on <code>release/iteration073</code> (73.0.20220, read live on 2026-10-21). Its play server has not run since 2026-10-07. Nothing is broken today; the breakages below apply the moment it moves. The CLI has no way to move a world, so step 2 needs the platform.</p>
+  <p>Ashlight is still on <code>release/iteration073</code> (73.0.20220): on 2026-10-21 the maker believed it had been updated to 076, but its editor (booted 04:25 UTC), its native client download and its play server all still report 073. The CLI has no way to move a world, so step 2 needs the platform.</p>
   <div class="table-scroll"><table>
     <thead><tr><th>Step</th><th>Work</th><th>Status</th></tr></thead>
     <tbody>
-      <tr><td class="mono">1</td><td>Stage version-tolerant fixes: 18 <code>receiveTransform</code> writes (M1), 16 <code>AddScript</code> calls (M3; the player spawn has no guard, so every join would abort), sky, sun, god rays and lens flare (M5), the salvage ray (M4), and a port of the light pass <code>ssao2.fs</code> to the 076 <code>FogFrame</code> inputs (M6). An audit of every other removed member found none in use, and all 361 <code>Widget:Set{}</code> keys exist on 076.</td><td>Done: 42 patches in 13 files, luachk clean; the Lua is safe on 073 (checked live: <code>Object.receiveTransform</code> reads nil there). The shader port is held until the move.</td></tr>
-      <tr><td class="mono">2</td><td>The platform moves Ashlight to iteration076. Confirm with the boot log: <code>Version 76…</code> and <code>maker edit - kept</code> for <code>ssao2.fs</code> and <code>common.glsl</code>.</td><td>Requested in this report</td></tr>
+      <tr><td class="mono">1</td><td>Stage version-tolerant fixes: 18 <code>receiveTransform</code> writes (M1), 16 <code>AddScript</code> calls (M3; the player spawn has no guard, so every join would abort), sky, sun, god rays and lens flare (M5), the salvage ray (M4), and a port of the light pass <code>ssao2.fs</code> to the 076 <code>FogFrame</code> inputs (M6). An audit of every other removed member found none in use, and all 361 <code>Widget:Set{}</code> keys exist on 076.</td><td>Done and <b>deployed</b> 2026-10-21 (safe on 073; verified live: 13/13 rig VoxelData take client transforms, errors empty). The shader port is held until the move.</td></tr>
+      <tr><td class="mono">1b</td><td>Nine-agent round on 073 (UI, combat, enemy models, responsiveness, effects, audio, performance, bugs, appeal): 132 patches in 20 scripts plus 41 new or remastered sounds, all version-tolerant. Cards M19-M30 come from it.</td><td>Deployed 2026-10-21. Verified live: name scrub, 2D audio, contact-frame combat (4/4 predicted), no ghost rigs after a 14-enemy stress test, Refuge 33 to 42.5 fps, idle server update 12.5 to 6.65 ms.</td></tr>
+      <tr><td class="mono">2</td><td>The platform moves Ashlight to iteration076. Confirm with the boot log: <code>Version 76…</code> and <code>maker edit - kept</code> for <code>ssao2.fs</code> and <code>common.glsl</code>.</td><td>Requested in this report; still pending</td></tr>
       <tr><td class="mono">3</td><td>One push of all fixes plus the shader port; check <code>errors</code>, <code>Client:GetShaderErrors()</code>, and real-client screenshots at the hub, the Undercroft and during the Dimming; smoke a join, a rig bind, the Abbot boss and an NPC.</td><td>Waiting on step 2</td></tr>
       <tr><td class="mono">4</td><td>Re-measure the 073 performance rules on 076: idle server, per-object cost, client shadows, particles.</td><td>Waiting on step 2</td></tr>
       <tr><td class="mono">5</td><td>Republish the play server (played scene, then verify the boot self-repair).</td><td>Waiting on step 2</td></tr>
-      <tr><td class="mono">6</td><td>Style prototype behind a graphics setting, in the order below; judge on a native client and in a browser.</td><td>Designed; built after step 3</td></tr>
+      <tr><td class="mono">6</td><td>Style prototype behind a graphics setting, in the order below; judge on a native client and in a browser.</td><td>Lua half live (ward lines at the exact holy radius, beacon kindle wave). Shader half staged: banded light and ink edges, off by default, compiles with glslang; turned on with <code>Ashlight.inkStyle = true</code> after the move.</td></tr>
       <tr><td class="mono">7</td><td>On each engine move, diff <code>Shaders/</code> and the API and grep the log for new renderer subsystems before investing further in hand-written passes.</td><td>Ongoing</td></tr>
     </tbody>
   </table></div>
@@ -954,6 +1183,8 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
     <li><b>Fix the nickname.</b> Never pass the sign-in email to worlds (M8).</li>
     <li><b>Clean generator audio</b> (DC block, high-pass, loudness normalisation) and document the client's output chain (M10, M11).</li>
     <li><b>Render after LateUpdate</b> or document the order (M9); allow surface rays on clients (M4).</li>
+    <li><b>Make silent failures loud.</b> Ashlight's audit found three more silent breaks, all on 073: every 2D sound (M19), client roof and ground rays (M4), and pooled objects that never deactivate on clients (M20). A nil position, a server-only ray option and an inactive flag each failed without a log line.</li>
+    <li><b>Document the network budget</b> (send rates, the real round trip, timestamps) so games can predict honestly (M21), and make generational GC the 073 default if it is safe (M22).</li>
     <li><b>CLI:</b> warn when <code>publish</code> would send a stale InitScene (M13); do not report a conflict when content is unchanged (M15); show the engine iteration in <code>status</code>.</li>
   </ol>
 </section>
@@ -974,6 +1205,10 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
   <ol class="qs">
     <li><b>Will makers get notice and a changelog before their worlds move, and can a world be pinned or tested on a copy first?</b><span class="why">See M12. SCAR broke silently; Ashlight is still on 073 and needs a planned move.</span></li>
     <li><b>Can old engine objects keep deprecated aliases for one iteration?</b><span class="why">See M1-M3.</span></li>
+    <li><b>How does a maker move a world to a new iteration?</b><span class="why">The maker believed Ashlight had been updated to 076 on 2026-10-21, but its editor, client and play server all still report <code>release/iteration073</code>; Update play servers only republishes the scene. We found no setting in the CLI or on the project page.</span></li>
+    <li><b>Is <code>AddScript(path)</code> still accepted on 076?</b><span class="why">SCAR's agents saw it both work and throw <code>expected a LuaFile Asset</code>; Ashlight's helper tries the path, then the Asset.</span></li>
+    <li><b>What are the send rates for RPCs and networked tables, and can a game get a send timestamp?</b><span class="why">See M21.</span></li>
+    <li><b>Is <code>collectgarbage('generational')</code> safe on the 073 Lua build?</b><span class="why">See M22. Ashlight runs it on 073 now.</span></li>
     <li><b>Is the <code>FogFrame</code> uniform block the stable interface for composite-pass shaders, and is there a supported way to pass custom uniforms to a post pass?</b><span class="why">Ashlight currently smuggles game state through <code>Dev/Fog/*</code> as exact integers below 2^24.</span></li>
     <li><b>Is the server-side voxel multithreading still planned, and in which iteration?</b><span class="why">It is the fix for M7 and F12.</span></li>
     <li><b>Why are surface attributes no longer readable from client rays?</b><span class="why">If it is a deliberate security or memory choice, documenting it would save every maker a debugging session (M4).</span></li>
@@ -981,7 +1216,9 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
   <h3 class="group">Audio and platform</h3>
   <ol class="qs">
     <li><b>Is there a master high-pass or limiter on the client, and will per-source filters or buses come?</b><span class="why">See M11. Distance muffling and music ducking are not possible today.</span></li>
-    <li><b>Can text-to-sound output be normalised?</b><span class="why">See M10.</span></li>
+    <li><b>Can text-to-sound output be normalised?</b><span class="why">See M10. Ashlight's 20 takes ranged from -50.6 to -8.3 LUFS for similar prompts, and 3 were almost entirely sub-bass.</span></li>
+    <li><b>Will <code>active</code> replicate to clients, and is there a supported pooling pattern?</b><span class="why">See M20.</span></li>
+    <li><b>Is <code>Input:Key</code> scancode- or layout-based, and is an action map or rebinding API planned?</b><span class="why">AZERTY players would find movement on the parry and skill keys; Ashlight has no rebinding.</span></li>
     <li><b>Can the desktop app keep more than one engine build, so makers can open older worlds?</b><span class="why">Installing the 076 client removed the 073 one.</span></li>
   </ol>
 </section>
@@ -989,7 +1226,8 @@ h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.
 <section id="changelog">
   <h2>Changelog</h2>
   <ul class="changelog">
-    <li><b>21 Oct 2026:</b> first edition. M1-M18 from the SCAR 076 audit and deploy, the Ashlight migration recon and staging, audio loopback measurements and the terrain edit-cost probe.</li>
+    <li><b>21 Oct 2026, later:</b> Ashlight round: M19-M30 from nine Ashlight agents (UI, combat, enemies, responsiveness, effects, audio, performance, bugs, appeal) and the deploy of 132 patches and 41 sounds; a correction to M4 (client ray options also throw on 073); SCAR's new sounds verified in a live bot match.</li>
+    <li><b>21 Oct 2026:</b> first edition. M1-M30 from the SCAR 076 audit and deploy, the Ashlight migration recon and staging, audio loopback measurements and the terrain edit-cost probe.</li>
   </ul>
 </section>
 
