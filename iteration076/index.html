@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VM Iteration076 Breakage Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a single engineering-report column; summary table first, then one 5W record per breakage, then measured limits. */
+:root {
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --fg: #15181d;
+  --muted: #5b6370;
+  --line: #d9dde3;
+  --accent: #2f4fa2;
+  --code-bg: #eceef2;
+  --sev-crit: #b3261e;
+  --sev-high: #c2570c;
+  --sev-med: #8a6d00;
+  --sev-low: #5b6370;
+  --ok: #1f7a4a;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111317; --surface: #1a1d23; --fg: #e7e9ed; --muted: #9aa2ae; --line: #2c3139;
+    --accent: #8fa8ec; --code-bg: #22262d;
+    --sev-crit: #f2766d; --sev-high: #f39a52; --sev-med: #e0c04d; --sev-low: #9aa2ae; --ok: #5cc98d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111317; --surface: #1a1d23; --fg: #e7e9ed; --muted: #9aa2ae; --line: #2c3139;
+  --accent: #8fa8ec; --code-bg: #22262d;
+  --sev-crit: #f2766d; --sev-high: #f39a52; --sev-med: #e0c04d; --sev-low: #9aa2ae; --ok: #5cc98d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 920px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); padding-block: 40px 72px; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: 2.3rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; font-weight: 600; }
+h3 { font-size: 1.15rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+header { display: grid; gap: 14px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 0.85rem; color: var(--muted); }
+.facts span b { color: var(--fg); font-weight: 500; }
+section { display: grid; gap: 16px; }
+.lede { font-size: 1.05rem; }
+ul.plain { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 72ch; }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td a { text-decoration: none; }
+td a:hover, td a:focus-visible { text-decoration: underline; }
+
+.sev { display: inline-block; font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; font-weight: 500; }
+.sev.crit { color: var(--sev-crit); }
+.sev.high { color: var(--sev-high); }
+.sev.med { color: var(--sev-med); }
+.sev.low { color: var(--sev-low); }
+.conf { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+
+.record { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--sev-low); border-radius: 4px; padding: 20px 22px; display: grid; gap: 14px; scroll-margin-top: 16px; }
+.record.crit { border-left-color: var(--sev-crit); }
+.record.high { border-left-color: var(--sev-high); }
+.record.med { border-left-color: var(--sev-med); }
+.rec-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.rec-id { font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.w5 { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 7px 14px; margin: 0; }
+.w5 dt { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.w5 dd { margin: 0; min-width: 0; }
+.extra { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.extra > div { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.extra h4 { margin: 0; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+pre { margin: 0; background: var(--code-bg); border-radius: 4px; padding: 10px 12px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.5; }
+pre code { background: none; padding: 0; font-size: inherit; }
+
+.bars { display: grid; gap: 8px; }
+.bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 64px; gap: 10px; align-items: center; font-size: 0.85rem; }
+.bar-row .lab { color: var(--muted); }
+.bar-track { height: 12px; background: var(--code-bg); border-radius: 2px; position: relative; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--accent); }
+.bar-fill.bad { background: var(--sev-crit); }
+.bar-fill.warn { background: var(--sev-high); }
+.bar-row .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.floor-note { font-size: 0.8rem; color: var(--muted); }
+
+.held { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.held div { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; min-width: 0; }
+.held b { display: block; font-family: var(--font-display); font-weight: 600; font-size: 1rem; color: var(--ok); }
+.held p { font-size: 0.88rem; color: var(--muted); }
+
+footer { font-size: 0.82rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; display: grid; gap: 6px; }
+
+ol.plain { margin: 0; padding-left: 1.5em; display: grid; gap: 8px; max-width: 72ch; }
+ol.plain ul, ul.plain ul { margin: 4px 0 0; padding-left: 1.2em; display: grid; gap: 3px; }
+.final-status { display: inline-block; justify-self: start; font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0.04em; padding: 5px 10px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 3px; background: var(--surface); }
+.back { margin-left: auto; font-family: var(--font-mono); font-size: 0.7rem; text-decoration: none; color: var(--muted); }
+.back:hover, .back:focus-visible { color: var(--accent); text-decoration: underline; }
+#index { scroll-margin-top: 16px; }
+section[id] { scroll-margin-top: 16px; }
+.exec { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 4px; padding: 20px 22px; }
+.exec ol { margin: 0; padding-left: 1.4em; display: grid; gap: 8px; max-width: 76ch; }
+nav.toc { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 14px 18px; display: grid; gap: 8px; }
+nav.toc ol { margin: 0; padding-left: 1.4em; columns: 2 260px; column-gap: 28px; font-size: 0.9rem; }
+nav.toc li { break-inside: avoid; padding: 2px 0; }
+.engine h3 { margin-top: 6px; }
+.engine .takeaway { border-left: 3px solid var(--accent); padding-left: 12px; max-width: 76ch; }
+.autopsy h3 { margin-top: 8px; }
+.autopsy .note { color: var(--muted); font-style: italic; }
+@media (max-width: 560px) {
+  h1 { font-size: 1.8rem; }
+  .w5 { grid-template-columns: 1fr; gap: 2px; }
+  .w5 dd { margin-bottom: 8px; }
+  .bar-row { grid-template-columns: 96px minmax(0, 1fr) 54px; }
+  .record { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+.changelog{margin:0;padding-left:1.2em;line-height:1.6}.changelog li{margin:.2em 0}
+.wins { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.wins div { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; min-width: 0; display: grid; gap: 4px; align-content: start; }
+.wins b { font-family: var(--font-display); font-weight: 600; font-size: 1rem; color: var(--ok); }
+.wins p { font-size: 0.88rem; color: var(--muted); }
+.qs { margin: 0; padding-left: 1.5em; display: grid; gap: 12px; max-width: 76ch; }
+.qs li b { font-weight: 600; }
+.qs .why { display: block; color: var(--muted); font-size: 0.9rem; }
+h3.group { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; margin-top: 8px; }
+</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Iteration076 edition · living document · last updated 21 Oct 2026 · 18 findings (2 critical · 6 high · 5 medium · 5 low)</div>
+  <h1>Where Virtual Matter Breaks: the move to iteration076</h1>
+  <p class="lede">What changed for two live games when the platform moved from engine <code>release/iteration073</code> to <code>release/iteration076</code> (76.0.20390, <code>24d309b4</code>; native client 76.0.1605; CLI 0.6.8). SCAR (destruction FPS) was moved on 2026-10-20 and has been fixed, improved and republished on 076. Ashlight (souls-dark survival) is still on 073; its migration is staged. Same 5W format as the <a href="https://ohge-games.github.io/virtual-matter-breakage-report/">Ashlight</a> and <a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/">SCAR</a> editions: IDs are M1, M2... and older cards are cited by their B- or F-number. Alongside the breakages, this edition lists what got better, our recommendations, and the questions we would like answered before the next iteration and the new renderer.</p>
+  <div class="facts">
+    <span>Engine <b class="mono">iteration076 · 24d309b4</b></span>
+    <span>Client <b>Native, Windows, 76.0.1605</b></span>
+    <span>SCAR <b class="mono">18QYJ28E5mDi5I1uRKpoY</b> (076)</span>
+    <span>Ashlight <b class="mono">9b9ILBOjInycFrZ0KCFn1</b> (073)</span>
+    <span>Tooling <b>virtualmatter CLI 0.6.8 + vm-agent-tools</b></span>
+    <span>Previous editions <b><a href="https://ohge-games.github.io/virtual-matter-breakage-report/">Ashlight v33</a> · <a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/">SCAR final</a></b></span>
+  </div>
+</header>
+
+<section class="exec" id="exec">
+  <h2>Executive summary</h2>
+  <ol>
+    <li><b>076 is much faster.</b> SCAR's client frame went from 42 ms to about 7 ms on the same laptop, particles got ten times cheaper, and the maker felt it at once.</li>
+    <li><b>It also broke both games silently.</b> Fields and signatures moved (<code>receiveTransform</code>, <code>PlaySound</code>, <code>AddScript</code>, client ray options) and the new strict setters throw inside the <code>pcall</code> guards that games use, so nothing was logged. SCAR lost its first-person gun and its soldiers lagged; Ashlight would lose its camera, rigs and bosses (M1-M5).</li>
+    <li><b>Custom shaders become frozen forks.</b> The engine keeps an edited built-in shader with one warning line, even when its inputs changed. Ashlight's light pass reads the wrong uniform block on 076 (M6).</li>
+    <li><b>Terrain edits cost more than before</b> in our test: about 80 ms of server compute and a 55-85 ms frame per dig (M7, F12).</li>
+    <li><b>The desktop app leaks the sign-in email</b> as the player name (M8).</li>
+    <li><b>The new renderer is not in 076.</b> It is the same AEVV renderer. 076 adds look controls (runtime shader defines, VM Sky, god rays, DOF) but no new rendering path; our questions about it are below.</li>
+  </ol>
+</section>
+
+<nav class="toc" aria-label="Contents">
+  <span class="eyebrow">Contents</span>
+  <ol>
+    <li><a href="#index">Findings index</a></li>
+    <li><a href="#cards">Findings (M-cards)</a></li>
+    <li><a href="#retest">Earlier cards re-tested on 076</a></li>
+    <li><a href="#wins">What got better</a></li>
+    <li><a href="#scar-state">SCAR on 076: what we shipped</a></li>
+    <li><a href="#ashlight">Ashlight: migration plan and the renderer concept</a></li>
+    <li><a href="#recs">Recommendations</a></li>
+    <li><a href="#questions">Questions for future iterations</a></li>
+    <li><a href="#changelog">Changelog</a></li>
+  </ol>
+</nav>
+
+<section id="index">
+  <h2>Findings index</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>#</th><th>Severity</th><th>Finding</th><th>Game</th><th>Status</th></tr></thead>
+    <tbody>
+        <tr><td class="mono">M1</td><td><span class="sev crit">Critical</span></td><td><a href="#m1"><code>receiveTransform</code> moved off VoxelData with no alias; inside <code>pcall</code> the failed write is silent</a></td><td>Both</td><td>Fixed in SCAR; staged for Ashlight</td></tr>
+        <tr><td class="mono">M2</td><td><span class="sev high">High</span></td><td><a href="#m2"><code>Audio:PlaySound</code> rejects string paths</a></td><td>SCAR (Ashlight already passes Assets)</td><td>Fixed in SCAR</td></tr>
+        <tr><td class="mono">M3</td><td><span class="sev high">High</span></td><td><a href="#m3"><code>Object:AddScript</code> needs a LuaFile Asset, not a path</a></td><td>Both</td><td>Fixed in SCAR; staged for Ashlight</td></tr>
+        <tr><td class="mono">M4</td><td><span class="sev high">High</span></td><td><a href="#m4">Client raycasts lost <code>WithNormal</code>, <code>WithColor</code> and <code>WithMaterial</code></a></td><td>Both</td><td>Worked around in SCAR; Ashlight partly</td></tr>
+        <tr><td class="mono">M5</td><td><span class="sev high">High</span></td><td><a href="#m5">The native <code>Sky</code> component is gone; VM Sky, god rays and lens flare switch on</a></td><td>Ashlight</td><td>Staged for Ashlight</td></tr>
+        <tr><td class="mono">M6</td><td><span class="sev crit">Critical</span></td><td><a href="#m6">A maker-edited shader is kept forever and silently stops matching the renderer's inputs</a></td><td>Both</td><td>SCAR verified; Ashlight port staged</td></tr>
+        <tr><td class="mono">M7</td><td><span class="sev high">High</span></td><td><a href="#m7">One terrain edit now costs about 80 ms of server compute and a 55-85 ms frame (F12 was 30-50 ms on 073)</a></td><td>SCAR</td><td>Open; designed around</td></tr>
+        <tr><td class="mono">M8</td><td><span class="sev high">High</span></td><td><a href="#m8">The desktop app sends the sign-in email address as the player nickname</a></td><td>Both</td><td>Mitigated in SCAR</td></tr>
+        <tr><td class="mono">M9</td><td><span class="sev med">Medium</span></td><td><a href="#m9">Transforms written in <code>LateUpdate</code> render one frame late (F25 still present)</a></td><td>SCAR</td><td>Worked around</td></tr>
+        <tr><td class="mono">M10</td><td><span class="sev med">Medium</span></td><td><a href="#m10">Generated sounds are mostly sub-20 Hz energy and DC offset, so they play quiet</a></td><td>SCAR</td><td>Fixed by post-processing</td></tr>
+        <tr><td class="mono">M11</td><td><span class="sev med">Medium</span></td><td><a href="#m11">Engine audio output removes everything below ~150 Hz and tracks loudness, not peak</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M12</td><td><span class="sev med">Medium</span></td><td><a href="#m12">Moving a world between engine iterations has no notice, changelog or self-service path</a></td><td>Both</td><td>Open</td></tr>
+        <tr><td class="mono">M13</td><td><span class="sev med">Medium</span></td><td><a href="#m13"><code>virtualmatter publish</code> defaults to InitScene, which can be a stale template</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M14</td><td><span class="sev low">Low</span></td><td><a href="#m14">Camera <code>zNear</code> resets after <code>AddComponent('Camera')</code></a></td><td>SCAR</td><td>Worked around</td></tr>
+        <tr><td class="mono">M15</td><td><span class="sev low">Low</span></td><td><a href="#m15">Push conflicts on files whose content did not change</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M16</td><td><span class="sev low">Low</span></td><td><a href="#m16">A connected client keeps playing the old decoding of a replaced sound</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M17</td><td><span class="sev low">Low</span></td><td><a href="#m17">Turning fog on turns VM Sky black</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M18</td><td><span class="sev low">Low</span></td><td><a href="#m18">8 built-in voxel material images are missing on the server</a></td><td>SCAR</td><td>No effect on SCAR</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="cards">
+  <h2>Findings</h2>
+    <article class="record crit" id="m1">
+    <div class="rec-head"><span class="rec-id">M1</span><h3><code>receiveTransform</code> moved off VoxelData with no alias; inside <code>pcall</code> the failed write is silent</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every world built before 076 that sets engine fields inside <code>pcall</code> (common defensive style, and the platform's own SDK examples did it).</dd>
+      <dt>What</dt><dd><code>receiveTransform</code> moved from <code>VoxelData</code> to <code>Object</code>. On 076 <code>vd.receiveTransform</code> reads <code>nil</code>, and assigning it raises <code>caught (...) exception</code>, because writing an unknown field on an engine object throws (it already did on 073, where the field still existed). Inside <code>pcall</code> nothing is logged.</dd>
+      <dt>When</dt><dd>from the first boot on iteration076 (SCAR was moved 2026-10-20 17:12 UTC with no notice to the maker).</dd>
+      <dt>Where</dt><dd>engine object property setters (VoxelData, Object); the same rule now applies to <code>Widget:Set{...}</code>, which drops the whole table if one key is unknown.</dd>
+      <dt>Why</dt><dd>the API move shipped without an alias or a deprecation warning, and the resulting exception is swallowed by the guard.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>SCAR: the first-person gun and arms vanished (the viewmodel was parked 6 m under the player and streamed back from the server), and every other soldier lagged behind its true position. Ashlight (still on 073): 18 writes, 17 of them unguarded, each of which aborts the enclosing Start/bind: no local camera or controls, no rig assembly, every boss client broken.</p></div>
+      <div><h4>Repro</h4><p><code>local vd = obj:GetComponentByType('VoxelData'); print(pcall(function() vd.receiveTransform = false end))</code> -> <code>false</code> on 076, <code>true</code> on 073 (on 073 <code>obj.receiveTransform</code> reads nil).</p></div>
+      <div><h4>Mitigation shipped</h4><p>write <code>obj.receiveTransform</code>; a helper that tries the Object field and falls back to the VoxelData field works on both builds.</p></div>
+      <div><h4>Suggested fix</h4><p>keep a deprecated alias for one iteration that forwards the old field and logs a single warning naming the new location. Log (rate-limited) every unknown-field write even when it is caught.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m2">
+    <div class="rec-head"><span class="rec-id">M2</span><h3><code>Audio:PlaySound</code> rejects string paths</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any world that plays sounds by path (<code>'Sounds/Thud02'</code>), a documented 073 idiom.</dd>
+      <dt>What</dt><dd><code>PlaySound</code> / <code>PlaySoundRelative</code> raise <code>expected a AudioFile Asset, got string</code>.</dd>
+      <dt>When</dt><dd>076.</dd>
+      <dt>Where</dt><dd>Audio API.</dd>
+      <dt>Why</dt><dd>signature tightened to Asset handles.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>in SCAR the spawn, grenade-throw, spade-whiff and big-explosion layer cues were silent (their asset names were missing, so code fell back to paths inside <code>pcall</code>).</p></div>
+      <div><h4>Repro</h4><p><code>Audio:PlaySound('Sounds/Thud02', Vec3(0,0,0), 1, false)</code> on a client.</p></div>
+      <div><h4>Mitigation shipped</h4><p>resolve a path's basename to an Asset through <code>AE:GetAssets()</code> once, cache it.</p></div>
+      <div><h4>Suggested fix</h4><p>accept a path again (resolve it internally), or throw a clear error that is not swallowed: these calls are normally guarded because audio must never crash gameplay.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m3">
+    <div class="rec-head"><span class="rec-id">M3</span><h3><code>Object:AddScript</code> needs a LuaFile Asset, not a path</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>worlds that attach scripts at runtime, including SCAR's workaround for F27 (published scenes losing script attachments).</dd>
+      <dt>What</dt><dd><code>obj:AddScript('Scar/Scar Mover.lua', true)</code> raises <code>expected a LuaFile Asset, got string</code>.</dd>
+      <dt>When</dt><dd>076.</dd>
+      <dt>Where</dt><dd><code>Object:AddScript(luaFile, sync)</code> (073: <code>AddScript(fileName, sync)</code>).</dd>
+      <dt>Why</dt><dd>signature change, no overload kept.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>SCAR's boot self-repair for missing scripts would fail silently on a play server, and creating a missing pawn aborted <code>serverStart</code>. Our own recon agent first concluded paths still worked, from a call that had run on 073 code paths; only a live 076 test showed the throw.</p></div>
+      <div><h4>Repro</h4><p>on a 076 server: <code>Scene:CreateObject('t'):AddScript('Scar/Scar Mover.lua', true)</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>look the Asset up by name and confirm with <code>AE:AssetPathInMontage(asset) == path</code>.</p></div>
+      <div><h4>Suggested fix</h4><p>keep the string overload, or add <code>AE:GetAssetByPath(path)</code> so there is one obvious migration.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m4">
+    <div class="rec-head"><span class="rec-id">M4</span><h3>Client raycasts lost <code>WithNormal</code>, <code>WithColor</code> and <code>WithMaterial</code></h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any client-side gameplay that reads surfaces: grenade bounces, decals, impact effects, footstep materials.</dd>
+      <dt>What</dt><dd>on clients the three options throw (<code>WithNormal() only supported on server</code>), and so does reading <code>hit.normal</code>, <code>hit.color</code> or <code>hit.material</code> (<code>normal/color/material are read by the server raycast only</code>). <code>hit.obj</code> is nil for every client hit. On the server, reading <code>hit.material</code> without <code>WithMaterial()</code> now throws too.</dd>
+      <dt>When</dt><dd>076.</dd>
+      <dt>Where</dt><dd>Cast/Raycast on the client.</dd>
+      <dt>Why</dt><dd>the client copy of static data apparently no longer exposes surface attributes to Lua.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>SCAR on clients: every thrown gadget's local proxy fell through the ground; every bullet impact used the soil palette, with no sparks or ricochets on concrete or steel. Ashlight: the salvage glints and the [E] Salvage prompt (a client <code>WithColor()</code> ray) will disappear on 076.</p></div>
+      <div><h4>Repro</h4><p>client: <code>Cast:Ray(cam.pos, Vec3(0,-5,0)):WithNormal():Run()</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>plain client rays with an ignore list; the server now sends the impact material with each shot event (one extra RPC argument).</p></div>
+      <div><h4>Suggested fix</h4><p>allow these on clients (the client renders the same voxels), or return nil fields instead of throwing; document it next to F7 (<code>ForceStatic()</code> is also server-only).</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m5">
+    <div class="rec-head"><span class="rec-id">M5</span><h3>The native <code>Sky</code> component is gone; VM Sky, god rays and lens flare switch on</h3><span class="sev high">High</span><span class="conf">Why: confirmed (component absent on SCAR 076; Ashlight not yet migrated)</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>worlds that hid or steered the old sky (Ashlight's dead-sun look).</dd>
+      <dt>What</dt><dd><code>GetComponentByType('Sky')</code> returns nil; the sky is now a Lua <code>SkyObject</code> plus a physical VM Sky. God rays and lens flare (<code>Dev/GodRays</code>, <code>Dev/LensFlare</code>) are on by default.</dd>
+      <dt>When</dt><dd>076.</dd>
+      <dt>Where</dt><dd>scene sky, <code>Editor Tools/Sky.lua</code>.</dd>
+      <dt>Why</dt><dd>sky rewrite.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Ashlight's <code>pcall</code>-wrapped <code>.render = false</code> and sun settings silently do nothing, so a lit blue or sunset sky and sun shafts would render behind a game built on darkness.</p></div>
+      <div><h4>Repro</h4><p>on 076: <code>Scene:GetObjectsByName('Sky')[1]:GetComponentByType('Sky')</code> -> nil.</p></div>
+      <div><h4>Mitigation shipped</h4><p><code>Client:SetSkyEnabled(false)</code>, <code>Client:SetSunDirection</code>, and the two Dev toggles set to 0 (all <code>pcall</code>'d, harmless on 073).</p></div>
+      <div><h4>Suggested fix</h4><p>a migration note per removed component; a scene-load warning when a script references a removed component type.</p></div>
+    </div>
+  </article>
+  <article class="record crit" id="m6">
+    <div class="rec-head"><span class="rec-id">M6</span><h3>A maker-edited shader is kept forever and silently stops matching the renderer's inputs</h3><span class="sev crit">Critical</span><span class="conf">Why: measured (SCAR) and inferred from source (Ashlight)</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every world that customises a built-in shader, the only route to a custom look (SCAR edits <code>vpuzzle2.fs</code>; Ashlight replaces <code>ssao2.fs</code> and patches <code>common.glsl</code>).</dd>
+      <dt>What</dt><dd>at boot the engine re-aligns built-in shader copies but keeps edited ones with <code>... is a maker edit - kept; it may not match this build's inputs</code> (SCAR log: <code>55 aligned, 1 maker edits kept</code>). The 076 composite <code>ssao2.fs</code> no longer includes <code>common.glsl</code>; it declares its own <code>FogFrame</code> block at <code>AE_BINDING(0)</code> and drops <code>h_viewportSize</code>.</dd>
+      <dt>When</dt><dd>every engine move.</dd>
+      <dt>Where</dt><dd><code>Shaders/</code> alignment (<code>UpdateMontageBasePrefabs</code>).</dd>
+      <dt>Why</dt><dd>there is no merge path or stable injection point for custom shading, so an edit becomes a fork.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>SCAR's edit happened to stay compatible (the 076 built-in <code>vpuzzle2.fs</code> equals 073's) but will never receive engine fixes. Ashlight's light pass reads the wrong uniform block on 076: world-position reconstruction, the lantern and the packed game state would be garbage, and the fog-off variant likely fails to compile. The only signal is one log line.</p></div>
+      <div><h4>Repro</h4><p>edit any built-in shader, move the world to a newer iteration, grep the boot log for <code>maker edit - kept</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>port by hand: diff the new built-in, re-apply the edit, check <code>Client:GetShaderErrors()</code> (new in 076) on a real client, screenshot.</p></div>
+      <div><h4>Suggested fix</h4><p>a supported hook (custom grade / post-process slot with a stable uniform block), or ship the previous built-in next to each kept edit so a 3-way merge is possible; surface kept edits in the editor UI.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m7">
+    <div class="rec-head"><span class="rec-id">M7</span><h3>One terrain edit now costs about 80 ms of server compute and a 55-85 ms frame (F12 was 30-50 ms on 073)</h3><span class="sev high">High</span><span class="conf">Why: measured (2 x 9 digs)</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every world with destructible terrain; it caps how much digging a match can have.</dd>
+      <dt>What</dt><dd>9 unbatched digs (capsule r 0.8) on the idle 076 editor server with one client: compute avg 82.0 ms, max 112.5 ms (from <code>OnFinished</code>'s <code>computeTimeMs</code>); worst server frame after each edit p50 58.4, p90 67.6, max 85.5 ms. With the new <code>OpBase:Batch()</code>: compute 81.4 ms avg, worst frame p50 54.6, max 84.1 ms. The connected native client never hitched (worst frame 12.7 / 14.4 ms); edits arrived ~0.15 s after the op (unbatched) and ~0.37 s (batched).</dd>
+      <dt>When</dt><dd>every static <code>Vox</code> op.</dd>
+      <dt>Where</dt><dd>server voxel op commit.</dd>
+      <dt>Why</dt><dd>unknown; 073 measured 30-33 ms worst frames for the same dig size (F12). Conditions differ (editor world vs play server), so this needs confirming on a play server.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>at SCAR's budget of 2.5 ops/s the server spends ~20% of its time in edits and drops frames on every dig; hit registration and movement for every player share that thread.</p></div>
+      <div><h4>Repro</h4><p><code>probes/srv_edit_cost.lua</code> from the SCAR physics work: 6 single digs 1 s apart, then 3 in one frame, with <code>OnFinished</code> timing and a 12-frame worst-frame window.</p></div>
+      <div><h4>Mitigation shipped</h4><p>global edit budget with a frame governor; <code>Batch()</code> kept off for gameplay edits (it delays delivery and saves nothing server-side), on for cosmetic paints.</p></div>
+      <div><h4>Suggested fix</h4><p>move the commit off the main thread (the server multithreading for voxel ops discussed in October); document what <code>Batch()</code> is meant to save.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m8">
+    <div class="rec-head"><span class="rec-id">M8</span><h3>The desktop app sends the sign-in email address as the player nickname</h3><span class="sev high">High</span><span class="conf">Why: confirmed</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every maker or player who signs in to the native desktop app with an email.</dd>
+      <dt>What</dt><dd>the app launches the client with <code>--nickname &lt;email&gt;</code>; Chat clamps it to 14 characters, so others see <code>name@domai</code>.</dd>
+      <dt>When</dt><dd>076 desktop app (76.0.1605).</dd>
+      <dt>Where</dt><dd>desktop launcher -> <code>Editor Tools/Chat.lua</code>.</dd>
+      <dt>Why</dt><dd>the account display name is not passed.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>a privacy leak: the fragment appeared in SCAR's lobby roster, kill feed, name tags, scoreboard and in its saved career records. Chat also posts a join line with it before any game script can rename the player.</p></div>
+      <div><h4>Repro</h4><p>sign in to the desktop app with an email, open any multiplayer world, read the Chat join line.</p></div>
+      <div><h4>Mitigation shipped</h4><p>SCAR keeps only the part before <code>@</code> (or a <code>Recruit N</code> callsign) and renames the Chat user; stored records were scrubbed.</p></div>
+      <div><h4>Suggested fix</h4><p>pass the account's public display name, never the email.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m9">
+    <div class="rec-head"><span class="rec-id">M9</span><h3>Transforms written in <code>LateUpdate</code> render one frame late (F25 still present)</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>anything posed against the camera: viewmodels, held items, HUD-attached 3D.</dd>
+      <dt>What</dt><dd>a pose written in <code>LateUpdate</code> lands one frame behind the camera: the gun sat 21-26 px low at 2 m/s vertical camera motion (~120 fps). Posing from <code>Update</code>, right after the camera moves, is exact.</dd>
+      <dt>When</dt><dd>073 and 076.</dd>
+      <dt>Where</dt><dd>frame order: LateUpdate transforms are captured after the render snapshot.</dd>
+      <dt>Why</dt><dd>unknown; most engines render after LateUpdate.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>on rocky ground (per-frame camera jumps up to 8.3 cm) SCAR's gun visibly jumped around: the maker's top complaint after 076.</p></div>
+      <div><h4>Repro</h4><p>move the camera vertically in Update, pose a child object in LateUpdate, screenshot.</p></div>
+      <div><h4>Mitigation shipped</h4><p>pose the viewmodel from the player script's Update after the camera, keep LateUpdate as a fallback.</p></div>
+      <div><h4>Suggested fix</h4><p>render after LateUpdate, or document the order and add a post-camera callback.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m10">
+    <div class="rec-head"><span class="rec-id">M10</span><h3>Generated sounds are mostly sub-20 Hz energy and DC offset, so they play quiet</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>anyone using <code>Fal:requestTextToSound</code> for game audio.</dd>
+      <dt>What</dt><dd>of 19 takes generated on 2026-10-21, gunshot and whoosh prompts put 83-98% of their energy below 20 Hz, with DC offsets around -39 dB; raw peaks were -23 to -29 dBFS for gunshots. The original SCAR Carbine and Sidearm takes (Oct) were the same: they peaked at -29 / -32 dBFS against +0.3 for another take, which is why the maker's own gun was quieter than distant enemies. Asset names are also re-cased (<code>ScarGen Carbine 2b</code> -> <code>Scargen Carbine 2B</code>).</dd>
+      <dt>When</dt><dd>text-to-sound workflow.</dd>
+      <dt>Where</dt><dd>generator output (no DC block or loudness normalisation).</dd>
+      <dt>Why</dt><dd>generator artifact.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>an untreated take plays 10-20 dB quieter than the built-in sounds next to it, and only a thin crack is heard (see M11).</p></div>
+      <div><h4>Repro</h4><p>generate 'close-up assault rifle single gunshot', run <code>ffmpeg -af volumedetect</code> and an FFT on the mp3.</p></div>
+      <div><h4>Mitigation shipped</h4><p>40 Hz high-pass, presence EQ, compression and limiting to about -9 LUFS, then push the mp3 under the final name.</p></div>
+      <div><h4>Suggested fix</h4><p>DC-block, high-pass and loudness-normalise generator output (for example to -14 LUFS, peak -1 dBFS); return mono for one-shots.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m11">
+    <div class="rec-head"><span class="rec-id">M11</span><h3>Engine audio output removes everything below ~150 Hz and tracks loudness, not peak</h3><span class="sev med">Medium</span><span class="conf">Why: measured (loopback capture)</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>sound design for any world.</dd>
+      <dt>What</dt><dd>capturing the native client's output and comparing bands with the source: below 100 Hz -47 to -50 dB, 100-200 Hz -18 to -24 dB, mids -8 to -17 dB. Two files with the same peak and RMS played 5 dB apart, matching their integrated loudness (-14.1 vs -9.0 LUFS). Setting <code>src.volume = 4</code> raised output only 4.3 dB. Mono and stereo files of the same content played at the same level.</dd>
+      <dt>When</dt><dd>076 native client, Windows.</dd>
+      <dt>Where</dt><dd>mixer / output stage.</dd>
+      <dt>Why</dt><dd>unknown (a master high-pass and limiter would explain it).</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>bass-heavy sounds (explosions, gunshots, footsteps) lose their weight; level matching by peak or RMS is misleading.</p></div>
+      <div><h4>Repro</h4><p>play two takes with equal peak but different spectra through <code>PlaySoundRelative</code> and record the system output.</p></div>
+      <div><h4>Mitigation shipped</h4><p>author for the mids, match on LUFS.</p></div>
+      <div><h4>Suggested fix</h4><p>document the output chain; expose per-source filters and bus volumes (there is no low-pass, so distance muffling has to be faked with pitch).</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m12">
+    <div class="rec-head"><span class="rec-id">M12</span><h3>Moving a world between engine iterations has no notice, changelog or self-service path</h3><span class="sev med">Medium</span><span class="conf">Why: observed</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every maker with a live world.</dd>
+      <dt>What</dt><dd>SCAR's editor and play server were moved to 076 on 2026-10-20 without notice; Ashlight is still on 073. The 076 desktop app speaks scene-stream 86 / voxel-stream 40 against 073's 79 / 35, and installing it through <code>virtualmatter open</code> removed the 073 client build. The CLI has no command to see or change a world's iteration, and the API changes are only discoverable by diffing <code>apiEmmyAtomontage.lua</code>.</dd>
+      <dt>When</dt><dd>2026-10-20.</dd>
+      <dt>Where</dt><dd>platform migration.</dd>
+      <dt>Why</dt><dd>no published migration process.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>the maker found out from in-game breakage (missing gun, lagging soldiers). A 073 world likely cannot be joined from the current desktop app.</p></div>
+      <div><h4>Repro</h4><p><code>AE:GetVersion()</code> on both worlds; <code>virtualmatter --help</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>we diff the API file and shaders on every move and grep the boot log.</p></div>
+      <div><h4>Suggested fix</h4><p>notify makers before a move, publish a per-iteration breaking-change list, let a maker pin or opt in per world (ideally test on a copy first), and show the iteration in <code>virtualmatter status</code>.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m13">
+    <div class="rec-head"><span class="rec-id">M13</span><h3><code>virtualmatter publish</code> defaults to InitScene, which can be a stale template</h3><span class="sev med">Medium</span><span class="conf">Why: confirmed</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>worlds whose live state is the played scene (SCAR saves it; InitScene was 12 days old).</dd>
+      <dt>What</dt><dd>CLI 0.6.8 <code>publish</code> sends InitScene unless <code>--played-scene</code> is passed. Our first 076 publish sent a scene with 147 of 296 objects.</dd>
+      <dt>When</dt><dd>CLI 0.6.8.</dd>
+      <dt>Where</dt><dd>publish.</dd>
+      <dt>Why</dt><dd>safe default for templates, wrong for games that save state.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>the play server briefly ran a 12-day-old scene; republished at once with <code>--played-scene</code>.</p></div>
+      <div><h4>Repro</h4><p><code>virtualmatter status</code> shows which scene play servers will load; run <code>publish</code> without the flag.</p></div>
+      <div><h4>Mitigation shipped</h4><p>always pass <code>--played-scene</code> for SCAR.</p></div>
+      <div><h4>Suggested fix</h4><p>warn when the played scene is much newer than InitScene, or ask.</p></div>
+    </div>
+  </article>
+  <article class="record low" id="m14">
+    <div class="rec-head"><span class="rec-id">M14</span><h3>Camera <code>zNear</code> resets after <code>AddComponent('Camera')</code></h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>A near plane of 0.05 written right after adding the camera reads back as 0.1 later; writes made afterwards stick. The first-person gun clipped through the near plane until SCAR re-asserted 0.05 each frame when it drifted above 0.06.</p>
+  </article>
+  <article class="record low" id="m15">
+    <div class="rec-head"><span class="rec-id">M15</span><h3>Push conflicts on files whose content did not change</h3><span class="sev low">Low</span><span class="conf">Why: confirmed</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>After boot the engine rewrites aligned shader copies, which changes their etags. Pushing an edited <code>Shaders/vpuzzle2.fs</code> then reported a conflict although the world copy was byte-identical to our base. <code>fetch</code> of that one file followed by a normal push resolved it. Suggested fix: compare content before declaring a conflict.</p>
+  </article>
+  <article class="record low" id="m16">
+    <div class="rec-head"><span class="rec-id">M16</span><h3>A connected client keeps playing the old decoding of a replaced sound</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Pushing a new file under an existing sound name updates the asset (server and client report the new size), but a client that already played it keeps the old audio until it reloads. A/B tests need fresh asset names. Suggested fix: invalidate the decoded buffer when the asset's file changes.</p>
+  </article>
+  <article class="record low" id="m17">
+    <div class="rec-head"><span class="rec-id">M17</span><h3>Turning fog on turns VM Sky black</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">&uarr; index</a></div>
+    <p><code>Dev/Fog/Density</code> above 0 blacks out the new sky (screenshot <code>gfx-l-fog.png</code>). Fog is also the only data channel Ashlight has into its light pass, which is why it must keep the sky off. Setting a Dev key that did not exist also creates it permanently.</p>
+  </article>
+  <article class="record low" id="m18">
+    <div class="rec-head"><span class="rec-id">M18</span><h3>8 built-in voxel material images are missing on the server</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>The 076 boot log lists 8 missing built-in voxel material image ids (the textured materials: stone, concrete, sand and similar). They are absent from the client and the world. SCAR's terrain is pre-baked and its runtime edits use untextured soil, so nothing visible changed; worlds that paint textured materials at runtime may be affected.</p>
+  </article>
+</section>
+
+<section id="retest">
+  <h2>Earlier cards re-tested on 076</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Card</th><th>Finding on 073</th><th>On 076</th><th>Note</th></tr></thead>
+    <tbody>
+        <tr><td class="mono"><a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/#f7">F7</a></td><td><code>ForceStatic()</code> throws on the client</td><td>Still open on 076</td><td>M4 widens it to WithNormal/Color/Material</td></tr>
+        <tr><td class="mono"><a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/#f11">F11</a></td><td>Zero-length <code>Cast:Ray</code> throws</td><td>Still open (server and client)</td><td>a 1e-6 ray returns no hit</td></tr>
+        <tr><td class="mono"><a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/#f12">F12</a></td><td>Each static edit costs a 30-50 ms server frame</td><td>Worse in our test: 55-85 ms</td><td>see M7</td></tr>
+        <tr><td class="mono"><a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/#f21">F21</a></td><td>Client VoxelData flags are wrong (static=false, no asset)</td><td>Still open</td><td>client terrain reads <code>static=false isLoaded=false</code></td></tr>
+        <tr><td class="mono"><a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/#f24">F24</a></td><td>HUD windows hidden after a reload</td><td>Not reproduced</td><td>client was not fresh; workaround kept</td></tr>
+        <tr><td class="mono"><a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/#f25">F25</a></td><td>LateUpdate poses render one frame late</td><td>Still open</td><td>see M9</td></tr>
+        <tr><td class="mono"><a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/#f26">F26</a></td><td>Play clients get pooled parts unparented</td><td>Not testable on the editor client</td><td>id lookups still work</td></tr>
+        <tr><td class="mono"><a href="https://ohge-games.github.io/virtual-matter-breakage-report/scar/#f27">F27</a></td><td>Published scenes drop script attachments</td><td>Workaround broken by 076, re-fixed</td><td>see M3</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="wins">
+  <h2>What got better</h2>
+  <div class="wins">
+    <div><b>Client frame time 42 -> 7 ms</b><p>Native client, Intel Iris Xe, 1080p, SCAR at Medium: 6.7-7.9 ms per frame on 076 against 42 ms (12 ms of it shadows) on 073. The maker noticed it as soon as they played.</p></div>
+    <div><b>Particles 10x cheaper</b><p>About 4-6 µs per live particle (200 add 1.16 ms) against about 50 µs on 073; billboards about 2.4 µs. SCAR raised its effect budgets.</p></div>
+    <div><b>Runtime shader defines</b><p><code>Client:SetVPuzzleShaderDefines</code> switches stylised lighting, posterisation and saturation per client without forking a shader. It is the first supported look control.</p></div>
+    <div><b><code>Client:GetShaderErrors()</code></b><p>Shader compile errors are finally visible from Lua; we used it to verify SCAR's grade on a real client.</p></div>
+    <div><b>VM Sky, sun and live DOF</b><p><code>SetSkyLook</code>, <code>SetSunDirection</code>, god rays, lens flare and a working depth of field (it contradicts the platform's own shaders guide, which says post effects are not wired).</p></div>
+    <div><b>Edit queue API</b><p><code>Vox.editQueue</code>, <code>OpBase:Batch()</code>, <code>Vox:flushEdits()</code> and an <code>OnFinished(info, computeTimeMs, status)</code> callback make edit cost measurable from Lua for the first time.</p></div>
+    <div><b>Richer RigidBody</b><p>Writable <code>velocity</code> and <code>angularVelocity</code>, <code>sleeping</code>, impulses, forces and torques. SCAR's debris now settles and sleeps instead of fighting the terrain.</p></div>
+    <div><b>Reusable rays</b><p>Mutating a cached Raycast's <code>startPos</code> costs 0.060 ms against 0.100 ms for a fresh ray with a 160-object ignore list.</p></div>
+    <div><b>Shader alignment</b><p>Unedited built-in shader copies are refreshed automatically at boot (55 of SCAR's 56).</p></div>
+    <div><b>CLI 0.6.8</b><p><code>push</code>, <code>fetch</code>, <code>status</code>, <code>publish</code> and <code>logs --restarts</code> replaced most of our custom tooling; the restart log explains every stop.</p></div>
+  </div>
+</section>
+
+<section id="scar-state">
+  <h2>SCAR on 076: what we shipped</h2>
+  <p>Five specialist agents (audio, API, graphics, physics, first-person feel) audited SCAR on 076 against the live editor and a connected native client; one lead composed their 93 anchored patches and deployed them on 2026-10-21, then republished the play server. Measured results:</p>
+  <ul class="plain">
+    <li><b>First-person gun:</b> back (M1) and steady on rock (M9). A damped eye spring cut camera jolt over measured rocky ground from 88 to 24 m/s² at 60 fps.</li>
+    <li><b>Reloads:</b> per-weapon animation with a visible magazine, keyed to new mag-out, mag-in and bolt sounds; no aiming during a magazine reload.</li>
+    <li><b>Own-gun loudness:</b> was -47 dB against -25 dB for a distant enemy Marksman. New generated takes (M10) loudness-matched to the engine's best built-in rifle; remote guns roll off properly and gain a distant boom.</li>
+    <li><b>Other soldiers:</b> rig roots stop taking server transforms; interpolation delay 0.205 -> 0.17 s, without overshoot (a 5 m/s runner no longer renders at 8.8 m/s).</li>
+    <li><b>Ragdolls:</b> fixed a frame-rate bug (deaths played 2.4x fast at 144 fps), a mid-air freeze off-screen and a wall launch.</li>
+    <li><b>Effects:</b> impacts get their real surface again via the server (M4); particle budgets raised on the strength of 076's cheaper particles.</li>
+    <li><b>Privacy:</b> lobby names no longer show part of an email (M8); 36 guest records and the email-named record were cleaned from the save data.</li>
+  </ul>
+</section>
+
+<section id="ashlight">
+  <h2>Ashlight: migration plan and the renderer concept</h2>
+  <p>Ashlight is still on <code>release/iteration073</code> (73.0.20220, read live on 2026-10-21). Its play server has not run since 2026-10-07. Nothing is broken today; the breakages below apply the moment it moves. The CLI has no way to move a world, so step 2 needs the platform.</p>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Step</th><th>Work</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1</td><td>Stage version-tolerant fixes: 18 <code>receiveTransform</code> writes (M1), 16 <code>AddScript</code> calls (M3; the player spawn has no guard, so every join would abort), sky, sun, god rays and lens flare (M5), the salvage ray (M4), and a port of the light pass <code>ssao2.fs</code> to the 076 <code>FogFrame</code> inputs (M6). An audit of every other removed member found none in use, and all 361 <code>Widget:Set{}</code> keys exist on 076.</td><td>Done: 42 patches in 13 files, luachk clean; the Lua is safe on 073 (checked live: <code>Object.receiveTransform</code> reads nil there). The shader port is held until the move.</td></tr>
+      <tr><td class="mono">2</td><td>The platform moves Ashlight to iteration076. Confirm with the boot log: <code>Version 76…</code> and <code>maker edit - kept</code> for <code>ssao2.fs</code> and <code>common.glsl</code>.</td><td>Requested in this report</td></tr>
+      <tr><td class="mono">3</td><td>One push of all fixes plus the shader port; check <code>errors</code>, <code>Client:GetShaderErrors()</code>, and real-client screenshots at the hub, the Undercroft and during the Dimming; smoke a join, a rig bind, the Abbot boss and an NPC.</td><td>Waiting on step 2</td></tr>
+      <tr><td class="mono">4</td><td>Re-measure the 073 performance rules on 076: idle server, per-object cost, client shadows, particles.</td><td>Waiting on step 2</td></tr>
+      <tr><td class="mono">5</td><td>Republish the play server (played scene, then verify the boot self-repair).</td><td>Waiting on step 2</td></tr>
+      <tr><td class="mono">6</td><td>Style prototype behind a graphics setting, in the order below; judge on a native client and in a browser.</td><td>Designed; built after step 3</td></tr>
+      <tr><td class="mono">7</td><td>On each engine move, diff <code>Shaders/</code> and the API and grep the log for new renderer subsystems before investing further in hand-written passes.</td><td>Ongoing</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Concept: "Ashlight, drawn in ember and ink"</h3>
+  <p>Ashlight's economy is fuel, light and safety. The concept makes that the art direction: inside a light radius the world is rendered in warm, banded toon light; outside it the world is only sketched in cold ink lines on soot. Fuel literally draws the world. What 076 already allows, and what we would want from the new renderer:</p>
+  <ul class="plain">
+    <li><b>Banded lantern light.</b> Quantise each light's falloff into 3-4 hard bands in the light pass, matched to the server's safety thresholds, so players see the exact edge of safety. Voxel side: <code>CUSTOM_LIGHTING_MODE 0</code> plus <code>LIGHTPOSTER</code> through <code>SetVPuzzleShaderDefines</code>, set once at join.</li>
+    <li><b>Ink in the dark.</b> A depth-edge line in the same pass (the edge term is already computed), soot-black in light and faint slate outside it, so ruins and the Hollow read against the void without being lit. Boss tells as coloured <code>VoxelData.outline</code> (amber parry window, cold blue unblockable).</li>
+    <li><b>Embers as the brightest thing on screen.</b> Everything else posterised; embers, Emberheart cracks and beacon coals stay smooth with a small halo, so the eye goes to fuel.</li>
+    <li><b>Layered darkness.</b> Distance haze in three stepped bands; Dread raises the band count, the Dimming collapses it to one.</li>
+    <li><b>The dead sun, with god rays used once.</b> VM Sky stays off; the Great Lantern tier-up and the Siege dawn get a scripted 8-second "sun breaks through" with <code>Dev/GodRays</code>.</li>
+  </ul>
+  <p class="floor-note">Risks we would like the renderer team's view on: a hand-written pass can be invalidated by the new renderer exactly as M6 describes; <code>SetVPuzzleShaderDefines</code> is labelled experimental and recompiles every effect (~100 ms); outline cost is unknown; and the maker playtests in a browser, where a posterised full-screen pass is unmeasured.</p>
+</section>
+
+
+<section id="recs">
+  <h2>Recommendations</h2>
+  <ol class="plain">
+    <li><b>Deprecate before removing.</b> Keep moved fields and old signatures (paths in <code>PlaySound</code> and <code>AddScript</code>) working for one iteration with a one-time warning that names the replacement. Three of SCAR's four breaks would have been log lines instead of invisible bugs (M1-M4).</li>
+    <li><b>Log caught engine errors.</b> A rate-limited log of exceptions raised inside <code>pcall</code> by engine setters would have found every 076 break on the first boot.</li>
+    <li><b>Publish a breaking-change list per iteration</b> and notify makers before moving a world; let them pin, opt in, or test on a copy (M12).</li>
+    <li><b>Give custom shading a stable home.</b> A grade or post-process slot with a documented uniform block, or at least the previous built-in kept beside each edited copy, so edits can be merged instead of frozen (M6). This matters most before the new renderer lands.</li>
+    <li><b>Profile the static edit commit.</b> It is the core cost of every destructible game and seems to have grown on 076 (M7).</li>
+    <li><b>Fix the nickname.</b> Never pass the sign-in email to worlds (M8).</li>
+    <li><b>Clean generator audio</b> (DC block, high-pass, loudness normalisation) and document the client's output chain (M10, M11).</li>
+    <li><b>Render after LateUpdate</b> or document the order (M9); allow surface rays on clients (M4).</li>
+    <li><b>CLI:</b> warn when <code>publish</code> would send a stale InitScene (M13); do not report a conflict when content is unchanged (M15); show the engine iteration in <code>status</code>.</li>
+  </ol>
+</section>
+
+<section id="questions">
+  <h2>Questions for future iterations</h2>
+  <h3 class="group">The new renderer</h3>
+  <ol class="qs">
+    <li><b>Which iteration ships the "entirely new renderer" shown on LinkedIn (cel-shaded microvoxels), and will it be per-world opt-in?</b><span class="why">076 still boots the AEVV renderer with the same voxel shader as 073; we found no new renderer code path, define or API.</span></li>
+    <li><b>What happens to worlds with edited <code>vpuzzle2.fs</code> / <code>ssao2.fs</code> / <code>common.glsl</code> under it?</b><span class="why">Both games depend on edits that the current alignment keeps as frozen forks (M6). We would rather plan the port than discover it.</span></li>
+    <li><b>Is the cel look a renderer feature, a set of <code>SetVPuzzleShaderDefines</code> options, or a shader recipe the built-in agent writes?</b><span class="why">The post says "just ask the built-in agent". Coding agents working through the CLI are told never to drive that agent, so we need the underlying API.</span></li>
+    <li><b>Will stylisation be per object (toon bands, ink outlines on character rigs) or only global?</b><span class="why">Ashlight's concept uses light as ink: banded light inside lantern radii, ink edges in the dark, outline-coded boss tells via <code>VoxelData.outline</code>.</span></li>
+    <li><b>Will point lights light voxels?</b><span class="why">Ashlight bakes arena light positions into its shader and packs game state into fog uniforms because there is no other way to light voxels from gameplay.</span></li>
+    <li><b>What do microvoxels change for collision, client ray precision (F5: 0.125-0.5 m quantisation) and edit cost (M7)?</b><span class="why">Finer voxels could make digging better or much more expensive.</span></li>
+    <li><b>How does the new renderer perform in browser (WASM) clients?</b><span class="why">Our makers playtest in Chrome; 076's native gains (42 -> 7 ms) are measured only on the desktop app.</span></li>
+  </ol>
+  <h3 class="group">Engine iterations</h3>
+  <ol class="qs">
+    <li><b>Will makers get notice and a changelog before their worlds move, and can a world be pinned or tested on a copy first?</b><span class="why">See M12. SCAR broke silently; Ashlight is still on 073 and needs a planned move.</span></li>
+    <li><b>Can old engine objects keep deprecated aliases for one iteration?</b><span class="why">See M1-M3.</span></li>
+    <li><b>Is the <code>FogFrame</code> uniform block the stable interface for composite-pass shaders, and is there a supported way to pass custom uniforms to a post pass?</b><span class="why">Ashlight currently smuggles game state through <code>Dev/Fog/*</code> as exact integers below 2^24.</span></li>
+    <li><b>Is the server-side voxel multithreading still planned, and in which iteration?</b><span class="why">It is the fix for M7 and F12.</span></li>
+    <li><b>Why are surface attributes no longer readable from client rays?</b><span class="why">If it is a deliberate security or memory choice, documenting it would save every maker a debugging session (M4).</span></li>
+  </ol>
+  <h3 class="group">Audio and platform</h3>
+  <ol class="qs">
+    <li><b>Is there a master high-pass or limiter on the client, and will per-source filters or buses come?</b><span class="why">See M11. Distance muffling and music ducking are not possible today.</span></li>
+    <li><b>Can text-to-sound output be normalised?</b><span class="why">See M10.</span></li>
+    <li><b>Can the desktop app keep more than one engine build, so makers can open older worlds?</b><span class="why">Installing the 076 client removed the 073 one.</span></li>
+  </ol>
+</section>
+
+<section id="changelog">
+  <h2>Changelog</h2>
+  <ul class="changelog">
+    <li><b>21 Oct 2026:</b> first edition. M1-M18 from the SCAR 076 audit and deploy, the Ashlight migration recon and staging, audio loopback measurements and the terrain edit-cost probe.</li>
+  </ul>
+</section>
+
+<footer class="mono">Compiled by Claude (Opus 5.5) working through the virtualmatter CLI, 20&ndash;21 Oct 2026. Every number comes from the live editor server, the play server or a connected native client unless marked as inferred.</footer>
+</div>
+</head><body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Iteration076 edition · living document · last updated 21 Oct 2026 · 18 findings (2 critical · 6 high · 5 medium · 5 low)</div>
+  <h1>Where Virtual Matter Breaks: the move to iteration076</h1>
+  <p class="lede">What changed for two live games when the platform moved from engine <code>release/iteration073</code> to <code>release/iteration076</code> (76.0.20390, <code>24d309b4</code>; native client 76.0.1605; CLI 0.6.8). SCAR (destruction FPS) was moved on 2026-10-20 and has been fixed, improved and republished on 076. Ashlight (souls-dark survival) is still on 073; its migration is staged. Same 5W format as the <a href="../">Ashlight</a> and <a href="../scar/">SCAR</a> editions: IDs are M1, M2... and older cards are cited by their B- or F-number. Alongside the breakages, this edition lists what got better, our recommendations, and the questions we would like answered before the next iteration and the new renderer.</p>
+  <div class="facts">
+    <span>Engine <b class="mono">iteration076 · 24d309b4</b></span>
+    <span>Client <b>Native, Windows, 76.0.1605</b></span>
+    <span>SCAR <b class="mono">18QYJ28E5mDi5I1uRKpoY</b> (076)</span>
+    <span>Ashlight <b class="mono">9b9ILBOjInycFrZ0KCFn1</b> (073)</span>
+    <span>Tooling <b>virtualmatter CLI 0.6.8 + vm-agent-tools</b></span>
+    <span>Previous editions <b><a href="../">Ashlight v33</a> · <a href="../scar/">SCAR final</a></b></span>
+  </div>
+</header>
+
+<section class="exec" id="exec">
+  <h2>Executive summary</h2>
+  <ol>
+    <li><b>076 is much faster.</b> SCAR's client frame went from 42 ms to about 7 ms on the same laptop, particles got ten times cheaper, and the maker felt it at once.</li>
+    <li><b>It also broke both games silently.</b> Fields and signatures moved (<code>receiveTransform</code>, <code>PlaySound</code>, <code>AddScript</code>, client ray options) and the new strict setters throw inside the <code>pcall</code> guards that games use, so nothing was logged. SCAR lost its first-person gun and its soldiers lagged; Ashlight would lose its camera, rigs and bosses (M1-M5).</li>
+    <li><b>Custom shaders become frozen forks.</b> The engine keeps an edited built-in shader with one warning line, even when its inputs changed. Ashlight's light pass reads the wrong uniform block on 076 (M6).</li>
+    <li><b>Terrain edits cost more than before</b> in our test: about 80 ms of server compute and a 55-85 ms frame per dig (M7, F12).</li>
+    <li><b>The desktop app leaks the sign-in email</b> as the player name (M8).</li>
+    <li><b>The new renderer is not in 076.</b> It is the same AEVV renderer. 076 adds look controls (runtime shader defines, VM Sky, god rays, DOF) but no new rendering path; our questions about it are below.</li>
+  </ol>
+</section>
+
+<nav class="toc" aria-label="Contents">
+  <span class="eyebrow">Contents</span>
+  <ol>
+    <li><a href="#index">Findings index</a></li>
+    <li><a href="#cards">Findings (M-cards)</a></li>
+    <li><a href="#retest">Earlier cards re-tested on 076</a></li>
+    <li><a href="#wins">What got better</a></li>
+    <li><a href="#scar-state">SCAR on 076: what we shipped</a></li>
+    <li><a href="#ashlight">Ashlight: migration plan and the renderer concept</a></li>
+    <li><a href="#recs">Recommendations</a></li>
+    <li><a href="#questions">Questions for future iterations</a></li>
+    <li><a href="#changelog">Changelog</a></li>
+  </ol>
+</nav>
+
+<section id="index">
+  <h2>Findings index</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>#</th><th>Severity</th><th>Finding</th><th>Game</th><th>Status</th></tr></thead>
+    <tbody>
+        <tr><td class="mono">M1</td><td><span class="sev crit">Critical</span></td><td><a href="#m1"><code>receiveTransform</code> moved off VoxelData with no alias; inside <code>pcall</code> the failed write is silent</a></td><td>Both</td><td>Fixed in SCAR; staged for Ashlight</td></tr>
+        <tr><td class="mono">M2</td><td><span class="sev high">High</span></td><td><a href="#m2"><code>Audio:PlaySound</code> rejects string paths</a></td><td>SCAR (Ashlight already passes Assets)</td><td>Fixed in SCAR</td></tr>
+        <tr><td class="mono">M3</td><td><span class="sev high">High</span></td><td><a href="#m3"><code>Object:AddScript</code> needs a LuaFile Asset, not a path</a></td><td>Both</td><td>Fixed in SCAR; staged for Ashlight</td></tr>
+        <tr><td class="mono">M4</td><td><span class="sev high">High</span></td><td><a href="#m4">Client raycasts lost <code>WithNormal</code>, <code>WithColor</code> and <code>WithMaterial</code></a></td><td>Both</td><td>Worked around in SCAR; Ashlight partly</td></tr>
+        <tr><td class="mono">M5</td><td><span class="sev high">High</span></td><td><a href="#m5">The native <code>Sky</code> component is gone; VM Sky, god rays and lens flare switch on</a></td><td>Ashlight</td><td>Staged for Ashlight</td></tr>
+        <tr><td class="mono">M6</td><td><span class="sev crit">Critical</span></td><td><a href="#m6">A maker-edited shader is kept forever and silently stops matching the renderer's inputs</a></td><td>Both</td><td>SCAR verified; Ashlight port staged</td></tr>
+        <tr><td class="mono">M7</td><td><span class="sev high">High</span></td><td><a href="#m7">One terrain edit now costs about 80 ms of server compute and a 55-85 ms frame (F12 was 30-50 ms on 073)</a></td><td>SCAR</td><td>Open; designed around</td></tr>
+        <tr><td class="mono">M8</td><td><span class="sev high">High</span></td><td><a href="#m8">The desktop app sends the sign-in email address as the player nickname</a></td><td>Both</td><td>Mitigated in SCAR</td></tr>
+        <tr><td class="mono">M9</td><td><span class="sev med">Medium</span></td><td><a href="#m9">Transforms written in <code>LateUpdate</code> render one frame late (F25 still present)</a></td><td>SCAR</td><td>Worked around</td></tr>
+        <tr><td class="mono">M10</td><td><span class="sev med">Medium</span></td><td><a href="#m10">Generated sounds are mostly sub-20 Hz energy and DC offset, so they play quiet</a></td><td>SCAR</td><td>Fixed by post-processing</td></tr>
+        <tr><td class="mono">M11</td><td><span class="sev med">Medium</span></td><td><a href="#m11">Engine audio output removes everything below ~150 Hz and tracks loudness, not peak</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M12</td><td><span class="sev med">Medium</span></td><td><a href="#m12">Moving a world between engine iterations has no notice, changelog or self-service path</a></td><td>Both</td><td>Open</td></tr>
+        <tr><td class="mono">M13</td><td><span class="sev med">Medium</span></td><td><a href="#m13"><code>virtualmatter publish</code> defaults to InitScene, which can be a stale template</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M14</td><td><span class="sev low">Low</span></td><td><a href="#m14">Camera <code>zNear</code> resets after <code>AddComponent('Camera')</code></a></td><td>SCAR</td><td>Worked around</td></tr>
+        <tr><td class="mono">M15</td><td><span class="sev low">Low</span></td><td><a href="#m15">Push conflicts on files whose content did not change</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M16</td><td><span class="sev low">Low</span></td><td><a href="#m16">A connected client keeps playing the old decoding of a replaced sound</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M17</td><td><span class="sev low">Low</span></td><td><a href="#m17">Turning fog on turns VM Sky black</a></td><td>SCAR</td><td>Documented</td></tr>
+        <tr><td class="mono">M18</td><td><span class="sev low">Low</span></td><td><a href="#m18">8 built-in voxel material images are missing on the server</a></td><td>SCAR</td><td>No effect on SCAR</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="cards">
+  <h2>Findings</h2>
+    <article class="record crit" id="m1">
+    <div class="rec-head"><span class="rec-id">M1</span><h3><code>receiveTransform</code> moved off VoxelData with no alias; inside <code>pcall</code> the failed write is silent</h3><span class="sev crit">Critical</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every world built before 076 that sets engine fields inside <code>pcall</code> (common defensive style, and the platform's own SDK examples did it).</dd>
+      <dt>What</dt><dd><code>receiveTransform</code> moved from <code>VoxelData</code> to <code>Object</code>. On 076 <code>vd.receiveTransform</code> reads <code>nil</code>, and assigning it raises <code>caught (...) exception</code>, because writing an unknown field on an engine object throws (it already did on 073, where the field still existed). Inside <code>pcall</code> nothing is logged.</dd>
+      <dt>When</dt><dd>from the first boot on iteration076 (SCAR was moved 2026-10-20 17:12 UTC with no notice to the maker).</dd>
+      <dt>Where</dt><dd>engine object property setters (VoxelData, Object); the same rule now applies to <code>Widget:Set{...}</code>, which drops the whole table if one key is unknown.</dd>
+      <dt>Why</dt><dd>the API move shipped without an alias or a deprecation warning, and the resulting exception is swallowed by the guard.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>SCAR: the first-person gun and arms vanished (the viewmodel was parked 6 m under the player and streamed back from the server), and every other soldier lagged behind its true position. Ashlight (still on 073): 18 writes, 17 of them unguarded, each of which aborts the enclosing Start/bind: no local camera or controls, no rig assembly, every boss client broken.</p></div>
+      <div><h4>Repro</h4><p><code>local vd = obj:GetComponentByType('VoxelData'); print(pcall(function() vd.receiveTransform = false end))</code> -> <code>false</code> on 076, <code>true</code> on 073 (on 073 <code>obj.receiveTransform</code> reads nil).</p></div>
+      <div><h4>Mitigation shipped</h4><p>write <code>obj.receiveTransform</code>; a helper that tries the Object field and falls back to the VoxelData field works on both builds.</p></div>
+      <div><h4>Suggested fix</h4><p>keep a deprecated alias for one iteration that forwards the old field and logs a single warning naming the new location. Log (rate-limited) every unknown-field write even when it is caught.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m2">
+    <div class="rec-head"><span class="rec-id">M2</span><h3><code>Audio:PlaySound</code> rejects string paths</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any world that plays sounds by path (<code>'Sounds/Thud02'</code>), a documented 073 idiom.</dd>
+      <dt>What</dt><dd><code>PlaySound</code> / <code>PlaySoundRelative</code> raise <code>expected a AudioFile Asset, got string</code>.</dd>
+      <dt>When</dt><dd>076.</dd>
+      <dt>Where</dt><dd>Audio API.</dd>
+      <dt>Why</dt><dd>signature tightened to Asset handles.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>in SCAR the spawn, grenade-throw, spade-whiff and big-explosion layer cues were silent (their asset names were missing, so code fell back to paths inside <code>pcall</code>).</p></div>
+      <div><h4>Repro</h4><p><code>Audio:PlaySound('Sounds/Thud02', Vec3(0,0,0), 1, false)</code> on a client.</p></div>
+      <div><h4>Mitigation shipped</h4><p>resolve a path's basename to an Asset through <code>AE:GetAssets()</code> once, cache it.</p></div>
+      <div><h4>Suggested fix</h4><p>accept a path again (resolve it internally), or throw a clear error that is not swallowed: these calls are normally guarded because audio must never crash gameplay.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m3">
+    <div class="rec-head"><span class="rec-id">M3</span><h3><code>Object:AddScript</code> needs a LuaFile Asset, not a path</h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>worlds that attach scripts at runtime, including SCAR's workaround for F27 (published scenes losing script attachments).</dd>
+      <dt>What</dt><dd><code>obj:AddScript('Scar/Scar Mover.lua', true)</code> raises <code>expected a LuaFile Asset, got string</code>.</dd>
+      <dt>When</dt><dd>076.</dd>
+      <dt>Where</dt><dd><code>Object:AddScript(luaFile, sync)</code> (073: <code>AddScript(fileName, sync)</code>).</dd>
+      <dt>Why</dt><dd>signature change, no overload kept.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>SCAR's boot self-repair for missing scripts would fail silently on a play server, and creating a missing pawn aborted <code>serverStart</code>. Our own recon agent first concluded paths still worked, from a call that had run on 073 code paths; only a live 076 test showed the throw.</p></div>
+      <div><h4>Repro</h4><p>on a 076 server: <code>Scene:CreateObject('t'):AddScript('Scar/Scar Mover.lua', true)</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>look the Asset up by name and confirm with <code>AE:AssetPathInMontage(asset) == path</code>.</p></div>
+      <div><h4>Suggested fix</h4><p>keep the string overload, or add <code>AE:GetAssetByPath(path)</code> so there is one obvious migration.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m4">
+    <div class="rec-head"><span class="rec-id">M4</span><h3>Client raycasts lost <code>WithNormal</code>, <code>WithColor</code> and <code>WithMaterial</code></h3><span class="sev high">High</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>any client-side gameplay that reads surfaces: grenade bounces, decals, impact effects, footstep materials.</dd>
+      <dt>What</dt><dd>on clients the three options throw (<code>WithNormal() only supported on server</code>), and so does reading <code>hit.normal</code>, <code>hit.color</code> or <code>hit.material</code> (<code>normal/color/material are read by the server raycast only</code>). <code>hit.obj</code> is nil for every client hit. On the server, reading <code>hit.material</code> without <code>WithMaterial()</code> now throws too.</dd>
+      <dt>When</dt><dd>076.</dd>
+      <dt>Where</dt><dd>Cast/Raycast on the client.</dd>
+      <dt>Why</dt><dd>the client copy of static data apparently no longer exposes surface attributes to Lua.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>SCAR on clients: every thrown gadget's local proxy fell through the ground; every bullet impact used the soil palette, with no sparks or ricochets on concrete or steel. Ashlight: the salvage glints and the [E] Salvage prompt (a client <code>WithColor()</code> ray) will disappear on 076.</p></div>
+      <div><h4>Repro</h4><p>client: <code>Cast:Ray(cam.pos, Vec3(0,-5,0)):WithNormal():Run()</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>plain client rays with an ignore list; the server now sends the impact material with each shot event (one extra RPC argument).</p></div>
+      <div><h4>Suggested fix</h4><p>allow these on clients (the client renders the same voxels), or return nil fields instead of throwing; document it next to F7 (<code>ForceStatic()</code> is also server-only).</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m5">
+    <div class="rec-head"><span class="rec-id">M5</span><h3>The native <code>Sky</code> component is gone; VM Sky, god rays and lens flare switch on</h3><span class="sev high">High</span><span class="conf">Why: confirmed (component absent on SCAR 076; Ashlight not yet migrated)</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>worlds that hid or steered the old sky (Ashlight's dead-sun look).</dd>
+      <dt>What</dt><dd><code>GetComponentByType('Sky')</code> returns nil; the sky is now a Lua <code>SkyObject</code> plus a physical VM Sky. God rays and lens flare (<code>Dev/GodRays</code>, <code>Dev/LensFlare</code>) are on by default.</dd>
+      <dt>When</dt><dd>076.</dd>
+      <dt>Where</dt><dd>scene sky, <code>Editor Tools/Sky.lua</code>.</dd>
+      <dt>Why</dt><dd>sky rewrite.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>Ashlight's <code>pcall</code>-wrapped <code>.render = false</code> and sun settings silently do nothing, so a lit blue or sunset sky and sun shafts would render behind a game built on darkness.</p></div>
+      <div><h4>Repro</h4><p>on 076: <code>Scene:GetObjectsByName('Sky')[1]:GetComponentByType('Sky')</code> -> nil.</p></div>
+      <div><h4>Mitigation shipped</h4><p><code>Client:SetSkyEnabled(false)</code>, <code>Client:SetSunDirection</code>, and the two Dev toggles set to 0 (all <code>pcall</code>'d, harmless on 073).</p></div>
+      <div><h4>Suggested fix</h4><p>a migration note per removed component; a scene-load warning when a script references a removed component type.</p></div>
+    </div>
+  </article>
+  <article class="record crit" id="m6">
+    <div class="rec-head"><span class="rec-id">M6</span><h3>A maker-edited shader is kept forever and silently stops matching the renderer's inputs</h3><span class="sev crit">Critical</span><span class="conf">Why: measured (SCAR) and inferred from source (Ashlight)</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every world that customises a built-in shader, the only route to a custom look (SCAR edits <code>vpuzzle2.fs</code>; Ashlight replaces <code>ssao2.fs</code> and patches <code>common.glsl</code>).</dd>
+      <dt>What</dt><dd>at boot the engine re-aligns built-in shader copies but keeps edited ones with <code>... is a maker edit - kept; it may not match this build's inputs</code> (SCAR log: <code>55 aligned, 1 maker edits kept</code>). The 076 composite <code>ssao2.fs</code> no longer includes <code>common.glsl</code>; it declares its own <code>FogFrame</code> block at <code>AE_BINDING(0)</code> and drops <code>h_viewportSize</code>.</dd>
+      <dt>When</dt><dd>every engine move.</dd>
+      <dt>Where</dt><dd><code>Shaders/</code> alignment (<code>UpdateMontageBasePrefabs</code>).</dd>
+      <dt>Why</dt><dd>there is no merge path or stable injection point for custom shading, so an edit becomes a fork.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>SCAR's edit happened to stay compatible (the 076 built-in <code>vpuzzle2.fs</code> equals 073's) but will never receive engine fixes. Ashlight's light pass reads the wrong uniform block on 076: world-position reconstruction, the lantern and the packed game state would be garbage, and the fog-off variant likely fails to compile. The only signal is one log line.</p></div>
+      <div><h4>Repro</h4><p>edit any built-in shader, move the world to a newer iteration, grep the boot log for <code>maker edit - kept</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>port by hand: diff the new built-in, re-apply the edit, check <code>Client:GetShaderErrors()</code> (new in 076) on a real client, screenshot.</p></div>
+      <div><h4>Suggested fix</h4><p>a supported hook (custom grade / post-process slot with a stable uniform block), or ship the previous built-in next to each kept edit so a 3-way merge is possible; surface kept edits in the editor UI.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m7">
+    <div class="rec-head"><span class="rec-id">M7</span><h3>One terrain edit now costs about 80 ms of server compute and a 55-85 ms frame (F12 was 30-50 ms on 073)</h3><span class="sev high">High</span><span class="conf">Why: measured (2 x 9 digs)</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every world with destructible terrain; it caps how much digging a match can have.</dd>
+      <dt>What</dt><dd>9 unbatched digs (capsule r 0.8) on the idle 076 editor server with one client: compute avg 82.0 ms, max 112.5 ms (from <code>OnFinished</code>'s <code>computeTimeMs</code>); worst server frame after each edit p50 58.4, p90 67.6, max 85.5 ms. With the new <code>OpBase:Batch()</code>: compute 81.4 ms avg, worst frame p50 54.6, max 84.1 ms. The connected native client never hitched (worst frame 12.7 / 14.4 ms); edits arrived ~0.15 s after the op (unbatched) and ~0.37 s (batched).</dd>
+      <dt>When</dt><dd>every static <code>Vox</code> op.</dd>
+      <dt>Where</dt><dd>server voxel op commit.</dd>
+      <dt>Why</dt><dd>unknown; 073 measured 30-33 ms worst frames for the same dig size (F12). Conditions differ (editor world vs play server), so this needs confirming on a play server.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>at SCAR's budget of 2.5 ops/s the server spends ~20% of its time in edits and drops frames on every dig; hit registration and movement for every player share that thread.</p></div>
+      <div><h4>Repro</h4><p><code>probes/srv_edit_cost.lua</code> from the SCAR physics work: 6 single digs 1 s apart, then 3 in one frame, with <code>OnFinished</code> timing and a 12-frame worst-frame window.</p></div>
+      <div><h4>Mitigation shipped</h4><p>global edit budget with a frame governor; <code>Batch()</code> kept off for gameplay edits (it delays delivery and saves nothing server-side), on for cosmetic paints.</p></div>
+      <div><h4>Suggested fix</h4><p>move the commit off the main thread (the server multithreading for voxel ops discussed in October); document what <code>Batch()</code> is meant to save.</p></div>
+    </div>
+  </article>
+  <article class="record high" id="m8">
+    <div class="rec-head"><span class="rec-id">M8</span><h3>The desktop app sends the sign-in email address as the player nickname</h3><span class="sev high">High</span><span class="conf">Why: confirmed</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every maker or player who signs in to the native desktop app with an email.</dd>
+      <dt>What</dt><dd>the app launches the client with <code>--nickname &lt;email&gt;</code>; Chat clamps it to 14 characters, so others see <code>name@domai</code>.</dd>
+      <dt>When</dt><dd>076 desktop app (76.0.1605).</dd>
+      <dt>Where</dt><dd>desktop launcher -> <code>Editor Tools/Chat.lua</code>.</dd>
+      <dt>Why</dt><dd>the account display name is not passed.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>a privacy leak: the fragment appeared in SCAR's lobby roster, kill feed, name tags, scoreboard and in its saved career records. Chat also posts a join line with it before any game script can rename the player.</p></div>
+      <div><h4>Repro</h4><p>sign in to the desktop app with an email, open any multiplayer world, read the Chat join line.</p></div>
+      <div><h4>Mitigation shipped</h4><p>SCAR keeps only the part before <code>@</code> (or a <code>Recruit N</code> callsign) and renames the Chat user; stored records were scrubbed.</p></div>
+      <div><h4>Suggested fix</h4><p>pass the account's public display name, never the email.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m9">
+    <div class="rec-head"><span class="rec-id">M9</span><h3>Transforms written in <code>LateUpdate</code> render one frame late (F25 still present)</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>anything posed against the camera: viewmodels, held items, HUD-attached 3D.</dd>
+      <dt>What</dt><dd>a pose written in <code>LateUpdate</code> lands one frame behind the camera: the gun sat 21-26 px low at 2 m/s vertical camera motion (~120 fps). Posing from <code>Update</code>, right after the camera moves, is exact.</dd>
+      <dt>When</dt><dd>073 and 076.</dd>
+      <dt>Where</dt><dd>frame order: LateUpdate transforms are captured after the render snapshot.</dd>
+      <dt>Why</dt><dd>unknown; most engines render after LateUpdate.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>on rocky ground (per-frame camera jumps up to 8.3 cm) SCAR's gun visibly jumped around: the maker's top complaint after 076.</p></div>
+      <div><h4>Repro</h4><p>move the camera vertically in Update, pose a child object in LateUpdate, screenshot.</p></div>
+      <div><h4>Mitigation shipped</h4><p>pose the viewmodel from the player script's Update after the camera, keep LateUpdate as a fallback.</p></div>
+      <div><h4>Suggested fix</h4><p>render after LateUpdate, or document the order and add a post-camera callback.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m10">
+    <div class="rec-head"><span class="rec-id">M10</span><h3>Generated sounds are mostly sub-20 Hz energy and DC offset, so they play quiet</h3><span class="sev med">Medium</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>anyone using <code>Fal:requestTextToSound</code> for game audio.</dd>
+      <dt>What</dt><dd>of 19 takes generated on 2026-10-21, gunshot and whoosh prompts put 83-98% of their energy below 20 Hz, with DC offsets around -39 dB; raw peaks were -23 to -29 dBFS for gunshots. The original SCAR Carbine and Sidearm takes (Oct) were the same: they peaked at -29 / -32 dBFS against +0.3 for another take, which is why the maker's own gun was quieter than distant enemies. Asset names are also re-cased (<code>ScarGen Carbine 2b</code> -> <code>Scargen Carbine 2B</code>).</dd>
+      <dt>When</dt><dd>text-to-sound workflow.</dd>
+      <dt>Where</dt><dd>generator output (no DC block or loudness normalisation).</dd>
+      <dt>Why</dt><dd>generator artifact.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>an untreated take plays 10-20 dB quieter than the built-in sounds next to it, and only a thin crack is heard (see M11).</p></div>
+      <div><h4>Repro</h4><p>generate 'close-up assault rifle single gunshot', run <code>ffmpeg -af volumedetect</code> and an FFT on the mp3.</p></div>
+      <div><h4>Mitigation shipped</h4><p>40 Hz high-pass, presence EQ, compression and limiting to about -9 LUFS, then push the mp3 under the final name.</p></div>
+      <div><h4>Suggested fix</h4><p>DC-block, high-pass and loudness-normalise generator output (for example to -14 LUFS, peak -1 dBFS); return mono for one-shots.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m11">
+    <div class="rec-head"><span class="rec-id">M11</span><h3>Engine audio output removes everything below ~150 Hz and tracks loudness, not peak</h3><span class="sev med">Medium</span><span class="conf">Why: measured (loopback capture)</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>sound design for any world.</dd>
+      <dt>What</dt><dd>capturing the native client's output and comparing bands with the source: below 100 Hz -47 to -50 dB, 100-200 Hz -18 to -24 dB, mids -8 to -17 dB. Two files with the same peak and RMS played 5 dB apart, matching their integrated loudness (-14.1 vs -9.0 LUFS). Setting <code>src.volume = 4</code> raised output only 4.3 dB. Mono and stereo files of the same content played at the same level.</dd>
+      <dt>When</dt><dd>076 native client, Windows.</dd>
+      <dt>Where</dt><dd>mixer / output stage.</dd>
+      <dt>Why</dt><dd>unknown (a master high-pass and limiter would explain it).</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>bass-heavy sounds (explosions, gunshots, footsteps) lose their weight; level matching by peak or RMS is misleading.</p></div>
+      <div><h4>Repro</h4><p>play two takes with equal peak but different spectra through <code>PlaySoundRelative</code> and record the system output.</p></div>
+      <div><h4>Mitigation shipped</h4><p>author for the mids, match on LUFS.</p></div>
+      <div><h4>Suggested fix</h4><p>document the output chain; expose per-source filters and bus volumes (there is no low-pass, so distance muffling has to be faked with pitch).</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m12">
+    <div class="rec-head"><span class="rec-id">M12</span><h3>Moving a world between engine iterations has no notice, changelog or self-service path</h3><span class="sev med">Medium</span><span class="conf">Why: observed</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>every maker with a live world.</dd>
+      <dt>What</dt><dd>SCAR's editor and play server were moved to 076 on 2026-10-20 without notice; Ashlight is still on 073. The 076 desktop app speaks scene-stream 86 / voxel-stream 40 against 073's 79 / 35, and installing it through <code>virtualmatter open</code> removed the 073 client build. The CLI has no command to see or change a world's iteration, and the API changes are only discoverable by diffing <code>apiEmmyAtomontage.lua</code>.</dd>
+      <dt>When</dt><dd>2026-10-20.</dd>
+      <dt>Where</dt><dd>platform migration.</dd>
+      <dt>Why</dt><dd>no published migration process.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>the maker found out from in-game breakage (missing gun, lagging soldiers). A 073 world likely cannot be joined from the current desktop app.</p></div>
+      <div><h4>Repro</h4><p><code>AE:GetVersion()</code> on both worlds; <code>virtualmatter --help</code>.</p></div>
+      <div><h4>Mitigation shipped</h4><p>we diff the API file and shaders on every move and grep the boot log.</p></div>
+      <div><h4>Suggested fix</h4><p>notify makers before a move, publish a per-iteration breaking-change list, let a maker pin or opt in per world (ideally test on a copy first), and show the iteration in <code>virtualmatter status</code>.</p></div>
+    </div>
+  </article>
+  <article class="record med" id="m13">
+    <div class="rec-head"><span class="rec-id">M13</span><h3><code>virtualmatter publish</code> defaults to InitScene, which can be a stale template</h3><span class="sev med">Medium</span><span class="conf">Why: confirmed</span><a class="back" href="#index">&uarr; index</a></div>
+    <dl class="w5">
+      <dt>Who</dt><dd>worlds whose live state is the played scene (SCAR saves it; InitScene was 12 days old).</dd>
+      <dt>What</dt><dd>CLI 0.6.8 <code>publish</code> sends InitScene unless <code>--played-scene</code> is passed. Our first 076 publish sent a scene with 147 of 296 objects.</dd>
+      <dt>When</dt><dd>CLI 0.6.8.</dd>
+      <dt>Where</dt><dd>publish.</dd>
+      <dt>Why</dt><dd>safe default for templates, wrong for games that save state.</dd>
+    </dl>
+    <div class="extra">
+      <div><h4>Impact</h4><p>the play server briefly ran a 12-day-old scene; republished at once with <code>--played-scene</code>.</p></div>
+      <div><h4>Repro</h4><p><code>virtualmatter status</code> shows which scene play servers will load; run <code>publish</code> without the flag.</p></div>
+      <div><h4>Mitigation shipped</h4><p>always pass <code>--played-scene</code> for SCAR.</p></div>
+      <div><h4>Suggested fix</h4><p>warn when the played scene is much newer than InitScene, or ask.</p></div>
+    </div>
+  </article>
+  <article class="record low" id="m14">
+    <div class="rec-head"><span class="rec-id">M14</span><h3>Camera <code>zNear</code> resets after <code>AddComponent('Camera')</code></h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>A near plane of 0.05 written right after adding the camera reads back as 0.1 later; writes made afterwards stick. The first-person gun clipped through the near plane until SCAR re-asserted 0.05 each frame when it drifted above 0.06.</p>
+  </article>
+  <article class="record low" id="m15">
+    <div class="rec-head"><span class="rec-id">M15</span><h3>Push conflicts on files whose content did not change</h3><span class="sev low">Low</span><span class="conf">Why: confirmed</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>After boot the engine rewrites aligned shader copies, which changes their etags. Pushing an edited <code>Shaders/vpuzzle2.fs</code> then reported a conflict although the world copy was byte-identical to our base. <code>fetch</code> of that one file followed by a normal push resolved it. Suggested fix: compare content before declaring a conflict.</p>
+  </article>
+  <article class="record low" id="m16">
+    <div class="rec-head"><span class="rec-id">M16</span><h3>A connected client keeps playing the old decoding of a replaced sound</h3><span class="sev low">Low</span><span class="conf">Why: measured</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>Pushing a new file under an existing sound name updates the asset (server and client report the new size), but a client that already played it keeps the old audio until it reloads. A/B tests need fresh asset names. Suggested fix: invalidate the decoded buffer when the asset's file changes.</p>
+  </article>
+  <article class="record low" id="m17">
+    <div class="rec-head"><span class="rec-id">M17</span><h3>Turning fog on turns VM Sky black</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">&uarr; index</a></div>
+    <p><code>Dev/Fog/Density</code> above 0 blacks out the new sky (screenshot <code>gfx-l-fog.png</code>). Fog is also the only data channel Ashlight has into its light pass, which is why it must keep the sky off. Setting a Dev key that did not exist also creates it permanently.</p>
+  </article>
+  <article class="record low" id="m18">
+    <div class="rec-head"><span class="rec-id">M18</span><h3>8 built-in voxel material images are missing on the server</h3><span class="sev low">Low</span><span class="conf">Why: observed</span><a class="back" href="#index">&uarr; index</a></div>
+    <p>The 076 boot log lists 8 missing built-in voxel material image ids (the textured materials: stone, concrete, sand and similar). They are absent from the client and the world. SCAR's terrain is pre-baked and its runtime edits use untextured soil, so nothing visible changed; worlds that paint textured materials at runtime may be affected.</p>
+  </article>
+</section>
+
+<section id="retest">
+  <h2>Earlier cards re-tested on 076</h2>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Card</th><th>Finding on 073</th><th>On 076</th><th>Note</th></tr></thead>
+    <tbody>
+        <tr><td class="mono"><a href="../scar/#f7">F7</a></td><td><code>ForceStatic()</code> throws on the client</td><td>Still open on 076</td><td>M4 widens it to WithNormal/Color/Material</td></tr>
+        <tr><td class="mono"><a href="../scar/#f11">F11</a></td><td>Zero-length <code>Cast:Ray</code> throws</td><td>Still open (server and client)</td><td>a 1e-6 ray returns no hit</td></tr>
+        <tr><td class="mono"><a href="../scar/#f12">F12</a></td><td>Each static edit costs a 30-50 ms server frame</td><td>Worse in our test: 55-85 ms</td><td>see M7</td></tr>
+        <tr><td class="mono"><a href="../scar/#f21">F21</a></td><td>Client VoxelData flags are wrong (static=false, no asset)</td><td>Still open</td><td>client terrain reads <code>static=false isLoaded=false</code></td></tr>
+        <tr><td class="mono"><a href="../scar/#f24">F24</a></td><td>HUD windows hidden after a reload</td><td>Not reproduced</td><td>client was not fresh; workaround kept</td></tr>
+        <tr><td class="mono"><a href="../scar/#f25">F25</a></td><td>LateUpdate poses render one frame late</td><td>Still open</td><td>see M9</td></tr>
+        <tr><td class="mono"><a href="../scar/#f26">F26</a></td><td>Play clients get pooled parts unparented</td><td>Not testable on the editor client</td><td>id lookups still work</td></tr>
+        <tr><td class="mono"><a href="../scar/#f27">F27</a></td><td>Published scenes drop script attachments</td><td>Workaround broken by 076, re-fixed</td><td>see M3</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="wins">
+  <h2>What got better</h2>
+  <div class="wins">
+    <div><b>Client frame time 42 -> 7 ms</b><p>Native client, Intel Iris Xe, 1080p, SCAR at Medium: 6.7-7.9 ms per frame on 076 against 42 ms (12 ms of it shadows) on 073. The maker noticed it as soon as they played.</p></div>
+    <div><b>Particles 10x cheaper</b><p>About 4-6 µs per live particle (200 add 1.16 ms) against about 50 µs on 073; billboards about 2.4 µs. SCAR raised its effect budgets.</p></div>
+    <div><b>Runtime shader defines</b><p><code>Client:SetVPuzzleShaderDefines</code> switches stylised lighting, posterisation and saturation per client without forking a shader. It is the first supported look control.</p></div>
+    <div><b><code>Client:GetShaderErrors()</code></b><p>Shader compile errors are finally visible from Lua; we used it to verify SCAR's grade on a real client.</p></div>
+    <div><b>VM Sky, sun and live DOF</b><p><code>SetSkyLook</code>, <code>SetSunDirection</code>, god rays, lens flare and a working depth of field (it contradicts the platform's own shaders guide, which says post effects are not wired).</p></div>
+    <div><b>Edit queue API</b><p><code>Vox.editQueue</code>, <code>OpBase:Batch()</code>, <code>Vox:flushEdits()</code> and an <code>OnFinished(info, computeTimeMs, status)</code> callback make edit cost measurable from Lua for the first time.</p></div>
+    <div><b>Richer RigidBody</b><p>Writable <code>velocity</code> and <code>angularVelocity</code>, <code>sleeping</code>, impulses, forces and torques. SCAR's debris now settles and sleeps instead of fighting the terrain.</p></div>
+    <div><b>Reusable rays</b><p>Mutating a cached Raycast's <code>startPos</code> costs 0.060 ms against 0.100 ms for a fresh ray with a 160-object ignore list.</p></div>
+    <div><b>Shader alignment</b><p>Unedited built-in shader copies are refreshed automatically at boot (55 of SCAR's 56).</p></div>
+    <div><b>CLI 0.6.8</b><p><code>push</code>, <code>fetch</code>, <code>status</code>, <code>publish</code> and <code>logs --restarts</code> replaced most of our custom tooling; the restart log explains every stop.</p></div>
+  </div>
+</section>
+
+<section id="scar-state">
+  <h2>SCAR on 076: what we shipped</h2>
+  <p>Five specialist agents (audio, API, graphics, physics, first-person feel) audited SCAR on 076 against the live editor and a connected native client; one lead composed their 93 anchored patches and deployed them on 2026-10-21, then republished the play server. Measured results:</p>
+  <ul class="plain">
+    <li><b>First-person gun:</b> back (M1) and steady on rock (M9). A damped eye spring cut camera jolt over measured rocky ground from 88 to 24 m/s² at 60 fps.</li>
+    <li><b>Reloads:</b> per-weapon animation with a visible magazine, keyed to new mag-out, mag-in and bolt sounds; no aiming during a magazine reload.</li>
+    <li><b>Own-gun loudness:</b> was -47 dB against -25 dB for a distant enemy Marksman. New generated takes (M10) loudness-matched to the engine's best built-in rifle; remote guns roll off properly and gain a distant boom.</li>
+    <li><b>Other soldiers:</b> rig roots stop taking server transforms; interpolation delay 0.205 -> 0.17 s, without overshoot (a 5 m/s runner no longer renders at 8.8 m/s).</li>
+    <li><b>Ragdolls:</b> fixed a frame-rate bug (deaths played 2.4x fast at 144 fps), a mid-air freeze off-screen and a wall launch.</li>
+    <li><b>Effects:</b> impacts get their real surface again via the server (M4); particle budgets raised on the strength of 076's cheaper particles.</li>
+    <li><b>Privacy:</b> lobby names no longer show part of an email (M8); 36 guest records and the email-named record were cleaned from the save data.</li>
+  </ul>
+</section>
+
+<section id="ashlight">
+  <h2>Ashlight: migration plan and the renderer concept</h2>
+  <p>Ashlight is still on <code>release/iteration073</code> (73.0.20220, read live on 2026-10-21). Its play server has not run since 2026-10-07. Nothing is broken today; the breakages below apply the moment it moves. The CLI has no way to move a world, so step 2 needs the platform.</p>
+  <div class="table-scroll"><table>
+    <thead><tr><th>Step</th><th>Work</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1</td><td>Stage version-tolerant fixes: 18 <code>receiveTransform</code> writes (M1), 16 <code>AddScript</code> calls (M3; the player spawn has no guard, so every join would abort), sky, sun, god rays and lens flare (M5), the salvage ray (M4), and a port of the light pass <code>ssao2.fs</code> to the 076 <code>FogFrame</code> inputs (M6). An audit of every other removed member found none in use, and all 361 <code>Widget:Set{}</code> keys exist on 076.</td><td>Done: 42 patches in 13 files, luachk clean; the Lua is safe on 073 (checked live: <code>Object.receiveTransform</code> reads nil there). The shader port is held until the move.</td></tr>
+      <tr><td class="mono">2</td><td>The platform moves Ashlight to iteration076. Confirm with the boot log: <code>Version 76…</code> and <code>maker edit - kept</code> for <code>ssao2.fs</code> and <code>common.glsl</code>.</td><td>Requested in this report</td></tr>
+      <tr><td class="mono">3</td><td>One push of all fixes plus the shader port; check <code>errors</code>, <code>Client:GetShaderErrors()</code>, and real-client screenshots at the hub, the Undercroft and during the Dimming; smoke a join, a rig bind, the Abbot boss and an NPC.</td><td>Waiting on step 2</td></tr>
+      <tr><td class="mono">4</td><td>Re-measure the 073 performance rules on 076: idle server, per-object cost, client shadows, particles.</td><td>Waiting on step 2</td></tr>
+      <tr><td class="mono">5</td><td>Republish the play server (played scene, then verify the boot self-repair).</td><td>Waiting on step 2</td></tr>
+      <tr><td class="mono">6</td><td>Style prototype behind a graphics setting, in the order below; judge on a native client and in a browser.</td><td>Designed; built after step 3</td></tr>
+      <tr><td class="mono">7</td><td>On each engine move, diff <code>Shaders/</code> and the API and grep the log for new renderer subsystems before investing further in hand-written passes.</td><td>Ongoing</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Concept: "Ashlight, drawn in ember and ink"</h3>
+  <p>Ashlight's economy is fuel, light and safety. The concept makes that the art direction: inside a light radius the world is rendered in warm, banded toon light; outside it the world is only sketched in cold ink lines on soot. Fuel literally draws the world. What 076 already allows, and what we would want from the new renderer:</p>
+  <ul class="plain">
+    <li><b>Banded lantern light.</b> Quantise each light's falloff into 3-4 hard bands in the light pass, matched to the server's safety thresholds, so players see the exact edge of safety. Voxel side: <code>CUSTOM_LIGHTING_MODE 0</code> plus <code>LIGHTPOSTER</code> through <code>SetVPuzzleShaderDefines</code>, set once at join.</li>
+    <li><b>Ink in the dark.</b> A depth-edge line in the same pass (the edge term is already computed), soot-black in light and faint slate outside it, so ruins and the Hollow read against the void without being lit. Boss tells as coloured <code>VoxelData.outline</code> (amber parry window, cold blue unblockable).</li>
+    <li><b>Embers as the brightest thing on screen.</b> Everything else posterised; embers, Emberheart cracks and beacon coals stay smooth with a small halo, so the eye goes to fuel.</li>
+    <li><b>Layered darkness.</b> Distance haze in three stepped bands; Dread raises the band count, the Dimming collapses it to one.</li>
+    <li><b>The dead sun, with god rays used once.</b> VM Sky stays off; the Great Lantern tier-up and the Siege dawn get a scripted 8-second "sun breaks through" with <code>Dev/GodRays</code>.</li>
+  </ul>
+  <p class="floor-note">Risks we would like the renderer team's view on: a hand-written pass can be invalidated by the new renderer exactly as M6 describes; <code>SetVPuzzleShaderDefines</code> is labelled experimental and recompiles every effect (~100 ms); outline cost is unknown; and the maker playtests in a browser, where a posterised full-screen pass is unmeasured.</p>
+</section>
+
+
+<section id="recs">
+  <h2>Recommendations</h2>
+  <ol class="plain">
+    <li><b>Deprecate before removing.</b> Keep moved fields and old signatures (paths in <code>PlaySound</code> and <code>AddScript</code>) working for one iteration with a one-time warning that names the replacement. Three of SCAR's four breaks would have been log lines instead of invisible bugs (M1-M4).</li>
+    <li><b>Log caught engine errors.</b> A rate-limited log of exceptions raised inside <code>pcall</code> by engine setters would have found every 076 break on the first boot.</li>
+    <li><b>Publish a breaking-change list per iteration</b> and notify makers before moving a world; let them pin, opt in, or test on a copy (M12).</li>
+    <li><b>Give custom shading a stable home.</b> A grade or post-process slot with a documented uniform block, or at least the previous built-in kept beside each edited copy, so edits can be merged instead of frozen (M6). This matters most before the new renderer lands.</li>
+    <li><b>Profile the static edit commit.</b> It is the core cost of every destructible game and seems to have grown on 076 (M7).</li>
+    <li><b>Fix the nickname.</b> Never pass the sign-in email to worlds (M8).</li>
+    <li><b>Clean generator audio</b> (DC block, high-pass, loudness normalisation) and document the client's output chain (M10, M11).</li>
+    <li><b>Render after LateUpdate</b> or document the order (M9); allow surface rays on clients (M4).</li>
+    <li><b>CLI:</b> warn when <code>publish</code> would send a stale InitScene (M13); do not report a conflict when content is unchanged (M15); show the engine iteration in <code>status</code>.</li>
+  </ol>
+</section>
+
+<section id="questions">
+  <h2>Questions for future iterations</h2>
+  <h3 class="group">The new renderer</h3>
+  <ol class="qs">
+    <li><b>Which iteration ships the "entirely new renderer" shown on LinkedIn (cel-shaded microvoxels), and will it be per-world opt-in?</b><span class="why">076 still boots the AEVV renderer with the same voxel shader as 073; we found no new renderer code path, define or API.</span></li>
+    <li><b>What happens to worlds with edited <code>vpuzzle2.fs</code> / <code>ssao2.fs</code> / <code>common.glsl</code> under it?</b><span class="why">Both games depend on edits that the current alignment keeps as frozen forks (M6). We would rather plan the port than discover it.</span></li>
+    <li><b>Is the cel look a renderer feature, a set of <code>SetVPuzzleShaderDefines</code> options, or a shader recipe the built-in agent writes?</b><span class="why">The post says "just ask the built-in agent". Coding agents working through the CLI are told never to drive that agent, so we need the underlying API.</span></li>
+    <li><b>Will stylisation be per object (toon bands, ink outlines on character rigs) or only global?</b><span class="why">Ashlight's concept uses light as ink: banded light inside lantern radii, ink edges in the dark, outline-coded boss tells via <code>VoxelData.outline</code>.</span></li>
+    <li><b>Will point lights light voxels?</b><span class="why">Ashlight bakes arena light positions into its shader and packs game state into fog uniforms because there is no other way to light voxels from gameplay.</span></li>
+    <li><b>What do microvoxels change for collision, client ray precision (F5: 0.125-0.5 m quantisation) and edit cost (M7)?</b><span class="why">Finer voxels could make digging better or much more expensive.</span></li>
+    <li><b>How does the new renderer perform in browser (WASM) clients?</b><span class="why">Our makers playtest in Chrome; 076's native gains (42 -> 7 ms) are measured only on the desktop app.</span></li>
+  </ol>
+  <h3 class="group">Engine iterations</h3>
+  <ol class="qs">
+    <li><b>Will makers get notice and a changelog before their worlds move, and can a world be pinned or tested on a copy first?</b><span class="why">See M12. SCAR broke silently; Ashlight is still on 073 and needs a planned move.</span></li>
+    <li><b>Can old engine objects keep deprecated aliases for one iteration?</b><span class="why">See M1-M3.</span></li>
+    <li><b>Is the <code>FogFrame</code> uniform block the stable interface for composite-pass shaders, and is there a supported way to pass custom uniforms to a post pass?</b><span class="why">Ashlight currently smuggles game state through <code>Dev/Fog/*</code> as exact integers below 2^24.</span></li>
+    <li><b>Is the server-side voxel multithreading still planned, and in which iteration?</b><span class="why">It is the fix for M7 and F12.</span></li>
+    <li><b>Why are surface attributes no longer readable from client rays?</b><span class="why">If it is a deliberate security or memory choice, documenting it would save every maker a debugging session (M4).</span></li>
+  </ol>
+  <h3 class="group">Audio and platform</h3>
+  <ol class="qs">
+    <li><b>Is there a master high-pass or limiter on the client, and will per-source filters or buses come?</b><span class="why">See M11. Distance muffling and music ducking are not possible today.</span></li>
+    <li><b>Can text-to-sound output be normalised?</b><span class="why">See M10.</span></li>
+    <li><b>Can the desktop app keep more than one engine build, so makers can open older worlds?</b><span class="why">Installing the 076 client removed the 073 one.</span></li>
+  </ol>
+</section>
+
+<section id="changelog">
+  <h2>Changelog</h2>
+  <ul class="changelog">
+    <li><b>21 Oct 2026:</b> first edition. M1-M18 from the SCAR 076 audit and deploy, the Ashlight migration recon and staging, audio loopback measurements and the terrain edit-cost probe.</li>
+  </ul>
+</section>
+
+<footer class="mono">Compiled by Claude (Opus 5.5) working through the virtualmatter CLI, 20&ndash;21 Oct 2026. Every number comes from the live editor server, the play server or a connected native client unless marked as inferred.</footer>
+</div>
+</body></html>
